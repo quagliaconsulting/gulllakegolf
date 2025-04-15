@@ -1,0 +1,9 @@
+1) Add a Proper Scoring and Tallying etc.  I think the best way to do this would be to have the points per match defined in the Format.  Please devise a way to integrate this without breaking anything
+2) Add a Money section to the tournament set up so that the wagers can be tracked by Player, who paid, who's been paid out, who is owed what? etc.  Allow me to specify the buy in and also how it breaks down etc.  Allow me to optionally add a CTP or Skins competition that are other pools to be competed for
+3) Add the ability for the users at the scorecard level to specify if a player won a par 3 CTP etc.  Keep track of this stat in the Leaderboard tab within the tournament id details. same thing with Skins, automatically identifty and report out Skins
+4) The Dashboard Side Bar button when clicked, that Page is quite undeveloped.  get rid of anything redundant and make it super cool and visually appealing with nice information about the total value in the app, total players, etc.  fix the % up or down indication right now everything says "unchanged"
+5) Make sure the Mobile Experience, a to z, every page, is set up and optimized for the latest smart phones.  
+7) in the page where you click the players side bar nav button, the edit and delete buttons per player do not currently work.
+6) Let's start there.  The app works amazing right now so please dont break anything.  Other than that do whatever you need to do but ask me if you are unsure or have any questions.
+
+**before you start coding or creating files etc etc etc, deeply understand the app.  maybe make a wireframe or something so you can reference it quicker in the future.  maybe not this is not required.  but totally understand it before coding so we dont create rendundancies or break this nice app.**

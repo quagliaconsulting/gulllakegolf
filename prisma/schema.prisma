@@ -1,0 +1,220 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Tournament {
+  id                String             @id @default(uuid())
+  name              String
+  year              Int
+  location          String
+  startDate         DateTime
+  endDate           DateTime
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  accommodations    Accommodation[]
+  courses           Course[]
+  formatMultipliers FormatMultiplier[]
+  galleryPhotos     GalleryPhoto[]
+  matches           Match[]
+  reports           Report[]
+  schedules         Schedule[]
+  teams             Team[]
+}
+
+model Team {
+  id           String     @id @default(uuid())
+  name         String
+  tournamentId String
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  awayTeam     Match[]    @relation("AwayTeam")
+  homeTeam     Match[]    @relation("HomeTeam")
+  players      Player[]
+  tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+}
+
+model Player {
+  id              String          @id @default(uuid())
+  name            String
+  email           String?
+  phone           String?
+  photoUrl        String?
+  handicapIndex   Float
+  teamId          String
+  accommodationId String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  accommodation   Accommodation?  @relation(fields: [accommodationId], references: [id])
+  team            Team            @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  playerPairings  PlayerPairing[] @relation("PlayerInPairing")
+}
+
+model Course {
+  id           String     @id @default(uuid())
+  name         String
+  tournamentId String
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  holes        Hole[]
+  matches      Match[]
+}
+
+model Hole {
+  id          String       @id @default(uuid())
+  number      Int
+  par         Int
+  handicap    Int
+  distance    Int
+  courseId    String
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  course      Course       @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  holeResults HoleResult[]
+}
+
+model Accommodation {
+  id           String     @id @default(uuid())
+  name         String
+  details      String?
+  tournamentId String
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  players      Player[]
+}
+
+model FormatMultiplier {
+  id            String     @id @default(uuid())
+  formatName    String
+  multiplier    Float
+  tournamentId  String
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+  isFourManTeam Boolean    @default(false)
+  tournament    Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  matches       Match[]
+}
+
+model Match {
+  id             String           @id @default(uuid())
+  tournamentId   String
+  scheduleId     String
+  formatId       String
+  homeTeamId     String
+  awayTeamId     String
+  courseId       String
+  startingHole   Int
+  teeTime        DateTime
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  holeResults    HoleResult[]
+  awayTeam       Team             @relation("AwayTeam", fields: [awayTeamId], references: [id])
+  course         Course           @relation(fields: [courseId], references: [id])
+  format         FormatMultiplier @relation(fields: [formatId], references: [id])
+  homeTeam       Team             @relation("HomeTeam", fields: [homeTeamId], references: [id])
+  schedule       Schedule         @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  tournament     Tournament       @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  points         MatchPoints?
+  playerPairings PlayerPairing[]
+}
+
+model PlayerPairing {
+  id         String   @id @default(uuid())
+  matchId    String
+  playerId   String
+  isHomeTeam Boolean
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  match      Match    @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  player     Player   @relation("PlayerInPairing", fields: [playerId], references: [id])
+
+  @@unique([matchId, playerId])
+}
+
+model HoleResult {
+  id                 String   @id @default(uuid())
+  matchId            String
+  holeId             String
+  homeTeamGrossScore Int?
+  awayTeamGrossScore Int?
+  homeTeamNetScore   Float?
+  awayTeamNetScore   Float?
+  winnerTeamId       String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  hole               Hole     @relation(fields: [holeId], references: [id])
+  match              Match    @relation(fields: [matchId], references: [id], onDelete: Cascade)
+
+  @@unique([matchId, holeId])
+}
+
+model MatchPoints {
+  id             String   @id @default(uuid())
+  matchId        String   @unique
+  homeTeamPoints Float
+  awayTeamPoints Float
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  match          Match    @relation(fields: [matchId], references: [id], onDelete: Cascade)
+}
+
+model Schedule {
+  id           String     @id @default(uuid())
+  tournamentId String
+  day          Int
+  date         DateTime
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  matches      Match[]
+  tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+}
+
+model GalleryPhoto {
+  id           String     @id @default(uuid())
+  fileName     String
+  filePath     String
+  fileUrl      String
+  description  String?
+  tags         String?
+  year         Int
+  tournamentId String
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+}
+
+model Report {
+  id           String     @id @default(uuid())
+  name         String
+  type         String
+  format       String
+  filePath     String
+  fileUrl      String
+  tournamentId String
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  name      String
+  role      UserRole @default(PLAYER)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+enum UserRole {
+  ADMIN
+  TEAM_CAPTAIN
+  PLAYER
+  SPECTATOR
+}
