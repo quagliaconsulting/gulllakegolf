@@ -149,12 +149,13 @@ model PlayerPairing {
   matchId    String
   playerId   String
   isHomeTeam Boolean
+  pairingGroup Int    @default(1) // Group identifier for sub-matches (e.g., in Singles)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
   match      Match    @relation(fields: [matchId], references: [id], onDelete: Cascade)
   player     Player   @relation("PlayerInPairing", fields: [playerId], references: [id])
 
-  @@unique([matchId, playerId])
+  @@unique([matchId, playerId, pairingGroup]) // Updated unique constraint
 }
 
 model HoleResult {

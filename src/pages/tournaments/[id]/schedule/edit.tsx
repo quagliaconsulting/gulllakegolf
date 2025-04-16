@@ -117,16 +117,26 @@ export default function EditSchedule() {
   // Add a new match to a tee time
   const addMatch = (dayIndex: number, teeTimeIndex: number) => {
     const updatedSchedule = [...scheduleData];
+    // Ensure courses exist before accessing ID
+    const defaultCourseId = tournament?.courses?.[0]?.id;
+
     const newMatch = {
       id: `match-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
-      format: formatOptions[0] || 'Four-Ball',
+      format: formatOptions[0] || 'Four-Ball', // Default format
       holes: 9, // Default to 9 holes
-      teams: [tournament?.teams?.[0]?.name || 'Team A', tournament?.teams?.[1]?.name || 'Team B'],
-      course: tournament?.courses?.[0]?.name || 'Main Course',
-      homeTeam: tournament?.teams?.[0]?.name || 'Team A',
-      awayTeam: tournament?.teams?.[1]?.name || 'Team B',
-      startingHole: 1
+      // course: tournament?.courses?.[0]?.name || 'Main Course', // Use courseId instead
+      courseId: defaultCourseId, // Set default course ID
+      startingHole: 1 // Default starting hole
     };
+
+    // Optionally add validation or a message if no default course is available
+    if (!defaultCourseId) {
+        console.warn("No default course found when adding a new match.");
+        // Decide how to handle: maybe leave courseId undefined, 
+        // or prevent adding match, or require selection later.
+        // For now, we allow adding it with undefined courseId, 
+        // user must select one before saving.
+    }
     
     updatedSchedule[dayIndex].teeTimes[teeTimeIndex].matches.push(newMatch);
     setScheduleData(updatedSchedule);
@@ -156,15 +166,6 @@ export default function EditSchedule() {
       ...updatedSchedule[dayIndex].teeTimes[teeTimeIndex].matches[matchIndex],
       [field]: value
     };
-    
-    // Special case for teams selection
-    if (field === 'homeTeam' || field === 'awayTeam') {
-      const teams = [
-        field === 'homeTeam' ? value : updatedSchedule[dayIndex].teeTimes[teeTimeIndex].matches[matchIndex].homeTeam,
-        field === 'awayTeam' ? value : updatedSchedule[dayIndex].teeTimes[teeTimeIndex].matches[matchIndex].awayTeam
-      ];
-      updatedSchedule[dayIndex].teeTimes[teeTimeIndex].matches[matchIndex].teams = teams;
-    }
     
     setScheduleData(updatedSchedule);
   };
@@ -454,18 +455,20 @@ export default function EditSchedule() {
                                       <div className="col-span-1">
                                         <label className="block text-xs font-medium text-gray-700">Course</label>
                                         <select
-                                          value={match.course}
-                                          onChange={(e) => updateMatch(dayIndex, teeTimeIndex, matchIndex, 'course', e.target.value)}
+                                          value={match.courseId || ''} // Use courseId for value
+                                          onChange={(e) => updateMatch(dayIndex, teeTimeIndex, matchIndex, 'courseId', e.target.value)} // Update courseId
                                           className="mt-1 block w-full rounded-md border-gray-300 text-xs shadow-sm focus:border-primary focus:ring-primary"
+                                          required // Make course selection mandatory before save
                                         >
+                                          <option value="" disabled>Select Course...</option> {/* Add placeholder */}
                                           {tournament.courses && tournament.courses.length > 0 ? (
                                             tournament.courses.map((course: any) => (
-                                              <option key={course.id} value={course.name}>
+                                              <option key={course.id} value={course.id}> {/* Option value is ID */}
                                                 {course.name}
                                               </option>
                                             ))
                                           ) : (
-                                            <option value="Main Course">Main Course</option>
+                                            <option value="" disabled>No courses available</option> /* Handle no courses case */
                                           )}
                                         </select>
                                       </div>
@@ -480,52 +483,6 @@ export default function EditSchedule() {
                                         >
                                           <option value="1">Hole 1</option>
                                           <option value="10">Hole 10</option>
-                                        </select>
-                                      </div>
-                                      
-                                      {/* Home Team */}
-                                      <div className="col-span-1">
-                                        <label className="block text-xs font-medium text-gray-700">Home Team</label>
-                                        <select
-                                          value={match.homeTeam}
-                                          onChange={(e) => updateMatch(dayIndex, teeTimeIndex, matchIndex, 'homeTeam', e.target.value)}
-                                          className="mt-1 block w-full rounded-md border-gray-300 text-xs shadow-sm focus:border-primary focus:ring-primary"
-                                        >
-                                          {tournament.teams && tournament.teams.length > 0 ? (
-                                            tournament.teams.map((team: any) => (
-                                              <option key={team.id} value={team.name}>
-                                                {team.name}
-                                              </option>
-                                            ))
-                                          ) : (
-                                            <>
-                                              <option value="Team A">Team A</option>
-                                              <option value="Team B">Team B</option>
-                                            </>
-                                          )}
-                                        </select>
-                                      </div>
-                                      
-                                      {/* Away Team */}
-                                      <div className="col-span-1">
-                                        <label className="block text-xs font-medium text-gray-700">Away Team</label>
-                                        <select
-                                          value={match.awayTeam}
-                                          onChange={(e) => updateMatch(dayIndex, teeTimeIndex, matchIndex, 'awayTeam', e.target.value)}
-                                          className="mt-1 block w-full rounded-md border-gray-300 text-xs shadow-sm focus:border-primary focus:ring-primary"
-                                        >
-                                          {tournament.teams && tournament.teams.length > 0 ? (
-                                            tournament.teams.map((team: any) => (
-                                              <option key={team.id} value={team.name}>
-                                                {team.name}
-                                              </option>
-                                            ))
-                                          ) : (
-                                            <>
-                                              <option value="Team A">Team A</option>
-                                              <option value="Team B">Team B</option>
-                                            </>
-                                          )}
                                         </select>
                                       </div>
                                     </div>

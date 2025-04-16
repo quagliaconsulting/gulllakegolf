@@ -134,63 +134,86 @@ export default async function handler(
                 }
               }
               
-              // Get team IDs
-              let homeTeamId = match.homeTeamId;
-              let awayTeamId = match.awayTeamId;
+              // Get team IDs based on metadata
+              let homeTeamId: string | undefined = undefined;
+              let awayTeamId: string | undefined = undefined;
               
-              // If home/away teams are strings (names), find or create them
-              if (!homeTeamId && match.homeTeam) {
-                const homeTeam = await tx.team.findFirst({
-                  where: {
-                    tournamentId,
-                    name: match.homeTeam,
-                  },
-                });
-                
-                if (homeTeam) {
-                  homeTeamId = homeTeam.id;
+              const allTeams = await tx.team.findMany({
+                where: { tournamentId },
+                select: { id: true, metadata: true } // Select only needed fields
+              });
+              
+              let designatedHomeTeam: any = null;
+              let designatedAwayTeams: any[] = [];
+              
+              for (const team of allTeams) {
+                // Safely check metadata structure and value
+                if (team.metadata && typeof team.metadata === 'object' && (team.metadata as any)?.isHomeTeam === true) {
+                    if (designatedHomeTeam) {
+                        // Error: More than one home team designated
+                        throw new Error(`Multiple teams are designated as home team in tournament ${tournamentId}. Please correct team metadata.`);
+                    }
+                    designatedHomeTeam = team;
+                    homeTeamId = team.id;
+                } else {
+                    designatedAwayTeams.push(team);
                 }
               }
-              
-              if (!awayTeamId && match.awayTeam) {
-                const awayTeam = await tx.team.findFirst({
-                  where: {
-                    tournamentId,
-                    name: match.awayTeam,
-                  },
-                });
-                
-                if (awayTeam) {
-                  awayTeamId = awayTeam.id;
-                }
+
+              if (!designatedHomeTeam) {
+                  throw new Error(`No designated home team found in tournament ${tournamentId}. Please set metadata {'isHomeTeam': true} on exactly one team.`);
               }
               
-              // Get teams if not provided
+              // For a standard 2-team match, find the specific away team if provided by name/ID
+              // Otherwise, if there's only one other team, assume it's the away team.
+              if (match.awayTeamId) {
+                 awayTeamId = match.awayTeamId;
+                 if (!allTeams.some(t => t.id === awayTeamId)) {
+                     throw new Error(`Provided awayTeamId ${awayTeamId} does not belong to this tournament.`);
+                 }
+              } else if (match.awayTeam) {
+                  const foundAway = await tx.team.findFirst({
+                      where: { tournamentId, name: match.awayTeam },
+                      select: { id: true }
+                  });
+                  if (!foundAway) {
+                       throw new Error(`Named away team '${match.awayTeam}' not found in tournament.`);
+                  }
+                  if (foundAway.id === homeTeamId) {
+                      throw new Error(`Named away team '${match.awayTeam}' cannot be the same as the designated home team.`);
+                  }
+                  awayTeamId = foundAway.id;
+              } else {
+                  // If away team isn't specified, try to infer if there's only ONE possible away team
+                  const possibleAwayTeams = designatedAwayTeams.filter(t => t.id !== homeTeamId);
+                   if (possibleAwayTeams.length === 1) {
+                      awayTeamId = possibleAwayTeams[0].id;
+                      console.log(`Inferred away team ${awayTeamId} as it's the only non-home team.`);
+                   } else if (possibleAwayTeams.length > 1) {
+                       throw new Error(`Could not determine the away team for match against home team ${homeTeamId}. Multiple potential away teams exist and none was specified.`);
+                   } else {
+                       // This case (no away teams) should ideally not happen in a 2-team setup
+                       throw new Error('Could not find any potential away team.');
+                   }
+              }
+              
               if (!homeTeamId || !awayTeamId) {
-                const teams = await tx.team.findMany({
-                  where: {
-                    tournamentId,
-                  },
-                  take: 2,
-                });
-                
-                if (teams.length >= 2) {
-                  if (!homeTeamId) homeTeamId = teams[0].id;
-                  if (!awayTeamId) awayTeamId = teams[1].id;
-                }
+                   // This should theoretically not be reachable due to checks above, but as a safeguard:
+                   throw new Error('Failed to determine both home and away team IDs.');
               }
-              
+
               // Create match
               await tx.match.create({
                 data: {
-                  tournamentId,
-                  scheduleId: scheduleDay.id,
-                  formatId,
-                  homeTeamId,
-                  awayTeamId,
-                  courseId: match.courseId,
                   startingHole: match.startingHole || 1,
                   teeTime: new Date(`${day.date}T${match.time || '08:00'}:00Z`),
+                  
+                  tournament: { connect: { id: tournamentId } },
+                  schedule: { connect: { id: scheduleDay.id } },
+                  homeTeam: { connect: { id: homeTeamId } },
+                  awayTeam: { connect: { id: awayTeamId } },
+                  ...(match.courseId && { course: { connect: { id: match.courseId } } }),
+                  ...(formatId && { format: { connect: { id: formatId } } }),
                 },
               });
             }

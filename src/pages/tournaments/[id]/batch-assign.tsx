@@ -15,9 +15,9 @@ interface PlayerAssignment {
   homeTeam: string;
   awayTeam: string;
   format: string;
-  homePlayers: string[];
-  awayPlayers: string[];
-  requiredPlayers: number;
+  homePlayers: string[]; // Initial selection (2 for singles)
+  awayPlayers: string[]; // Initial selection (2 for singles)
+  requiredPlayers: number; // Based on format (pairs=2, 4man=4, singles=2 for initial selection)
   allHomePlayers: any[];
   allAwayPlayers: any[];
   expanded: boolean;
@@ -26,8 +26,8 @@ interface PlayerAssignment {
   isSingles?: boolean;
   time?: string;
   course?: string;
-  needsMatchups?: boolean;
-  playerMatchups?: {homeId: string, awayId: string}[];
+  needsMatchups?: boolean; // Flag to show the matchup builder UI for singles
+  playerMatchups?: {homeId: string, awayId: string}[]; // UI state for building the two 1v1 singles pairs
   homeTeamId?: string;
   awayTeamId?: string;
   formatId?: string;
@@ -35,7 +35,7 @@ interface PlayerAssignment {
   startingHole?: number;
   teeTime?: string;
   scheduleId?: string;
-  matchupsCreated?: boolean;
+  // matchupsCreated?: boolean; // Removed
 }
 
 export default function BatchAssignPlayers() {
@@ -175,138 +175,138 @@ export default function BatchAssignPlayers() {
     }));
   };
 
-  // Check if a match has the correct number of players assigned
+  // Check if a match has the correct number of players assigned for initial selection
   const isMatchValid = (assignment: PlayerAssignment): boolean => {
-    // Check if this is a singles match that already has matchups created or marked as created
-    if (assignment.isSingles && (assignment.playerMatchups?.length === 2 || assignment.matchupsCreated)) {
-      return true; // Singles matches with matchups already created are valid
+    // For singles, initial validation requires 2 players per team to allow matchup creation
+    if (assignment.isSingles) {
+      return assignment.homePlayers.length === 2 && assignment.awayPlayers.length === 2;
     }
-    
+    // For other formats, check against required players
     if (assignment.isPairsFormat) {
       return assignment.homePlayers.length === 2 && assignment.awayPlayers.length === 2;
     } else if (assignment.isFourManTeam) {
       return assignment.homePlayers.length === 4 && assignment.awayPlayers.length === 4;
-    } else if (assignment.isSingles) {
-      // For singles batch assign, we allow 2 players from each team for foursome creation
-      return assignment.homePlayers.length === 2 && assignment.awayPlayers.length === 2;
     }
-    return assignment.homePlayers.length === assignment.requiredPlayers && 
+    // Fallback, should ideally be covered by specific format checks
+    // Note: This doesn't validate singles matchups, only the initial 2+2 selection.
+    return assignment.homePlayers.length === assignment.requiredPlayers &&
            assignment.awayPlayers.length === assignment.requiredPlayers;
   };
 
   // Handle form submission
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError(null); // Clear previous errors
+
+    // 1. Validate initial player counts for all assignments
+    // Filter assignments to only those with *some* players selected, 
+    // otherwise validation might fail on empty matches the user hasn't touched.
+    const assignmentsWithSelections = assignments.filter(a => a.homePlayers.length > 0 || a.awayPlayers.length > 0);
+    const invalidPlayerCountMatches = assignmentsWithSelections.filter(a => !isMatchValid(a));
     
-    const invalidMatches = assignments.filter(a => !isMatchValid(a));
-    
-    if (invalidMatches.length > 0) {
-      setError(`${invalidMatches.length} matches have incorrect player assignments. Please fix before saving.`);
-      
-      // Expand invalid matches to make them visible
-      setAssignments(prev => prev.map(assignment => {
-        if (!isMatchValid(assignment)) {
-          return { ...assignment, expanded: true };
-        }
-        return assignment;
-      }));
-      
+    if (invalidPlayerCountMatches.length > 0) {
+      const firstInvalid = invalidPlayerCountMatches[0];
+      const required = firstInvalid.isFourManTeam ? 4 : (firstInvalid.isPairsFormat || firstInvalid.isSingles ? 2 : firstInvalid.requiredPlayers);
+      setError(`${invalidPlayerCountMatches.length} matches have incorrect initial player counts. Please ensure ${required} players are selected per team.`);
+      // Expand invalid matches
+      setAssignments(prev => prev.map(a => invalidPlayerCountMatches.some(inv => inv.matchId === a.matchId) ? { ...a, expanded: true } : a));
       return;
     }
-    
-    // Check if any singles matches need player pairings
-    const singlesMatches = assignments.filter(a => 
-      a.isSingles && isMatchValid(a)
+
+    // 2. Validate that all Singles matches (that have players selected) have their 2 pairings defined and complete
+    const singlesMatchesWithSelections = assignmentsWithSelections.filter(a => a.isSingles);
+    const singlesWithoutMatchups = singlesMatchesWithSelections.filter(
+      a => !a.playerMatchups || a.playerMatchups.length !== 2 || a.playerMatchups.some(m => !m.homeId || !m.awayId)
     );
-    
-    if (singlesMatches.length > 0) {
-      // Check if all singles matches have complete matchups
-      const singlesWithoutMatchups = singlesMatches.filter(a => 
-        !a.playerMatchups || a.playerMatchups.length !== 2
-      );
-      
-      if (singlesWithoutMatchups.length > 0) {
-        // Show error message
-        setError("Please specify the 1v1 player matchups for Singles matches by clicking 'Setup 1v1 Matchups' on each Singles match below before saving.");
-        
-        // Mark all singles matches as needing matchups
-        setAssignments(prev => prev.map(assignment => {
-          if (singlesWithoutMatchups.some(m => m.matchId === assignment.matchId)) {
-            return { ...assignment, expanded: true, needsMatchups: true };
-          }
-          return assignment;
-        }));
-        
-        return;
-      }
+
+    if (singlesWithoutMatchups.length > 0) {
+      setError("Please specify the two complete 1v1 player matchups for all Singles matches that have players assigned. Expand the match and use the 'Setup 1v1 Player Matchups' section.");
+      // Expand invalid singles matches and ensure the builder is visible
+      setAssignments(prev => prev.map(a => 
+        singlesWithoutMatchups.some(m => m.matchId === a.matchId) 
+          ? { ...a, expanded: true, needsMatchups: true } 
+          : a
+      ));
+      return;
     }
-    
-    setError(null);
+
+    // 3. Prepare data for API call - only include assignments that have selections
     setSaving(true);
-    
-    // Only save assignments that have been modified with players
-    const assignmentsToSave = assignments.filter(a => 
-      a.homePlayers.length > 0 || a.awayPlayers.length > 0
-    ).map(a => ({
-      matchId: a.matchId,
-      homePlayers: a.homePlayers,
-      awayPlayers: a.awayPlayers,
-      isSingles: a.isSingles
-    }));
-    
-    try {
-      // First save all player assignments
-      await axios.post('/api/matches/batch-assign', {
-        assignments: assignmentsToSave
-      });
-      
-      // Then create individual player-to-player matches for singles
-      const singlesFoursomes = assignments.filter(a => 
-        a.isSingles && a.playerMatchups && a.playerMatchups.length === 2
-      );
-      
-      if (singlesFoursomes.length > 0) {
-        // Create player-to-player matches for each singles foursome
-        for (const foursome of singlesFoursomes) {
-          // Generate a unique foursome group ID
-          const foursomeGroupId = `foursome_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-          
-          // Use the create-foursome endpoint - map the field names to match the API
-          await axios.post('/api/matches/create-foursome', {
-            tournamentId: id,
-            scheduleId: foursome.scheduleId,
-            formatId: foursome.formatId,
-            homeTeamId: foursome.homeTeamId,
-            awayTeamId: foursome.awayTeamId,
-            courseId: foursome.courseId,
-            startingHole: foursome.startingHole || 1,
-            teeTime: foursome.teeTime,
-            matchups: foursome.playerMatchups!.map(m => ({
+    const assignmentsToSave = assignmentsWithSelections
+      .map(a => {
+        if (a.isSingles) {
+          // Format for Singles: Use the 'pairings' structure (validation ensures playerMatchups is valid here)
+          return {
+            matchId: a.matchId,
+            pairings: a.playerMatchups!.map(m => ({ // Use non-null assertion as validated above
               homePlayerId: m.homeId,
               awayPlayerId: m.awayId
             }))
-          });
-          
-          // Mark this match as already having matchups in the UI
-          setAssignments(prev => prev.map(a => {
-            if (a.matchId === foursome.matchId) {
-              return { ...a, matchupsCreated: true };
-            }
-            return a;
-          }));
+          };
+        } else {
+          // Format for non-Singles: Use homePlayers/awayPlayers (validation ensures counts are correct)
+          return {
+            matchId: a.matchId,
+            homePlayers: a.homePlayers,
+            awayPlayers: a.awayPlayers
+          };
         }
+      }); // No need to filter nulls as we start from assignmentsWithSelections
+
+    if (assignmentsToSave.length === 0) {
+       setError("No player assignments to save. Please select players for at least one match.");
+       setSaving(false);
+       return;
+    }
+
+    // Get token from local storage for authorization
+    const token = localStorage.getItem('token');
+    if (!token) {
+      setError('Authentication error: No token found. Please log in again.');
+      setSaving(false);
+      return;
+    }
+    
+    const config = {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    };
+
+    console.log('Payload being sent to /api/matches/batch-assign:', JSON.stringify(assignmentsToSave, null, 2));
+
+    try {
+      // Single API call for all assignments - include config with auth header
+      const response = await axios.post('/api/matches/batch-assign', {
+        assignments: assignmentsToSave
+      }, config);
+
+      // Handle response (check status code and results array)
+      const results = response.data.results || [];
+      const allSuccessful = response.status === 200 && results.every((r: any) => r.success);
+      const partialSuccess = response.status === 207 || (response.status !== 200 && results.some((r: any) => r.success));
+
+      if (allSuccessful) {
+        setSaveSuccess(true);
+        refreshSchedules(); // Refresh data on success
+        // Clear local matchup state for singles after successful save
+        setAssignments(prev => prev.map(a => a.isSingles ? { ...a, needsMatchups: false } : a)); 
+        setTimeout(() => setSaveSuccess(false), 3000);
+      } else if (partialSuccess) {
+         setError(`Some assignments saved, but errors occurred: ${results.filter((r:any) => !r.success).map((r:any) => `Match ${r.matchId}: ${r.error}`).join(', ')}`);
+         refreshSchedules(); // Refresh data even on partial success
+      } else {
+        // General failure or all assignments failed
+        const errorMessages = results.length > 0 
+          ? results.map((r: any) => `Match ${r.matchId || 'Unknown'}: ${r.error || 'Unknown error'}`).join(', ')
+          : (response.data.message || 'Please try again.');
+        setError(`Failed to save assignments. ${errorMessages}`);
       }
-      
-      setSaveSuccess(true);
-      refreshSchedules();
-      
-      // Reset after 3 seconds
-      setTimeout(() => {
-        setSaveSuccess(false);
-      }, 3000);
-    } catch (err) {
+
+    } catch (err: any) {
       console.error('Error saving batch assignments:', err);
-      setError('Failed to save player assignments. Please try again.');
+      const apiError = err.response?.data?.message || err.response?.data?.error || 'An unknown error occurred. Please try again.';
+      setError(`Failed to save player assignments: ${apiError}`);
     } finally {
       setSaving(false);
     }
@@ -393,25 +393,15 @@ export default function BatchAssignPlayers() {
             <button
               type="button"
               onClick={() => {
-                // Check if we have any assignments
-                const hasAssignments = assignments.some(a => 
-                  a.homePlayers.length > 0 || a.awayPlayers.length > 0
-                );
-                
-                if (!hasAssignments) {
-                  alert('No assignments to clear.');
-                  return;
-                }
-                
-                // Confirm deletion
-                if (window.confirm('Are you sure you want to remove ALL player assignments for ALL matches? This cannot be undone.')) {
+                // ... confirmation logic ...
+                if (window.confirm('Are you sure you want to remove ALL player assignments and defined matchups for ALL displayed matches? This cannot be undone.')) {
                   setAssignments(prev => prev.map(a => ({
                     ...a,
                     homePlayers: [],
                     awayPlayers: [],
-                    playerMatchups: [],
-                    matchupsCreated: false,
-                    needsMatchups: false
+                    playerMatchups: [], // Clear matchups too
+                    needsMatchups: false // Reset flag
+                    // matchupsCreated: false, // Removed
                   })));
                 }
               }}
@@ -447,7 +437,7 @@ export default function BatchAssignPlayers() {
                   <li key={assignment.matchId} className="px-0">
                     {/* Match Header (always visible) */}
                     <div 
-                      className={`px-4 py-4 cursor-pointer hover:bg-gray-50 ${!isMatchValid(assignment) && assignment.homePlayers.length + assignment.awayPlayers.length > 0 ? 'bg-red-50' : ''}`}
+                      className={`px-4 py-4 cursor-pointer hover:bg-gray-50 ${!isMatchValid(assignment) && (assignment.homePlayers.length > 0 || assignment.awayPlayers.length > 0) ? 'bg-red-50' : ''}`}
                       onClick={() => toggleMatchExpanded(assignment.matchId)}
                     >
                       <div className="flex justify-between items-center">
@@ -468,43 +458,53 @@ export default function BatchAssignPlayers() {
                         </div>
                         
                         <div className="flex items-center">
-                          {/* Status indicator */}
+                          {/* Status indicator - Updated Logic */}
                           <div className="mr-4">
                             {(() => {
-                              if (assignment.homePlayers.length === 0 && assignment.awayPlayers.length === 0) {
+                              const hasSelections = assignment.homePlayers.length > 0 || assignment.awayPlayers.length > 0;
+                              if (!hasSelections) {
                                 return <span className="px-2 py-1 text-xs font-medium rounded-full bg-gray-100 text-gray-800">Not Assigned</span>;
-                              } else if (isMatchValid(assignment)) {
-                                if (assignment.isSingles && (assignment.playerMatchups?.length === 2 || assignment.matchupsCreated)) {
-                                  return <span className="px-2 py-1 text-xs font-medium rounded-full bg-green-100 text-green-800">Matchups ✓</span>;
+                              }
+                              const initialSelectionValid = isMatchValid(assignment);
+                              // Check if both matchups are fully defined (both homeId and awayId exist)
+                              const singlesMatchupsComplete = assignment.isSingles && assignment.playerMatchups?.length === 2 && assignment.playerMatchups.every(m => m.homeId && m.awayId);
+
+                              if (assignment.isSingles) {
+                                if (initialSelectionValid && singlesMatchupsComplete) {
+                                  return <span className="px-2 py-1 text-xs font-medium rounded-full bg-green-100 text-green-800">Ready ✓</span>;
+                                } else if (initialSelectionValid) {
+                                  return <span className="px-2 py-1 text-xs font-medium rounded-full bg-yellow-100 text-yellow-800">Needs 1v1 Matchups</span>;
                                 } else {
-                                  return <span className="px-2 py-1 text-xs font-medium rounded-full bg-green-100 text-green-800">Valid</span>;
+                                  return <span className="px-2 py-1 text-xs font-medium rounded-full bg-red-100 text-red-800">Invalid Selection</span>;
                                 }
-                              } else {
-                                return <span className="px-2 py-1 text-xs font-medium rounded-full bg-red-100 text-red-800">Invalid</span>;
+                              } else { // Non-Singles
+                                if (initialSelectionValid) {
+                                  return <span className="px-2 py-1 text-xs font-medium rounded-full bg-green-100 text-green-800">Ready ✓</span>;
+                                } else {
+                                  return <span className="px-2 py-1 text-xs font-medium rounded-full bg-red-100 text-red-800">Invalid Selection</span>;
+                                }
                               }
                             })()}
                           </div>
                           
                           {/* Actions */}
                           <div className="flex items-center space-x-2">
-                            {/* Delete button - only show if players are assigned */}
+                             {/* Delete button - Updated confirmation/logic */}
                             {(assignment.homePlayers.length > 0 || assignment.awayPlayers.length > 0) && (
                               <button
                                 type="button"
                                 onClick={(e) => {
-                                  e.stopPropagation(); // Prevent expanding toggle
-                                  
-                                  // Confirm deletion
-                                  if (window.confirm('Are you sure you want to remove all player assignments for this match?')) {
+                                  e.stopPropagation(); 
+                                  if (window.confirm('Are you sure you want to remove player assignments and defined matchups for this match?')) {
                                     setAssignments(prev => prev.map(a => {
                                       if (a.matchId === assignment.matchId) {
                                         return {
                                           ...a,
                                           homePlayers: [],
                                           awayPlayers: [],
-                                          playerMatchups: [],
-                                          matchupsCreated: false,
-                                          needsMatchups: false
+                                          playerMatchups: [], // Clear matchups too
+                                          needsMatchups: false // Reset flag
+                                          // matchupsCreated: false, // Removed
                                         };
                                       }
                                       return a;
@@ -512,16 +512,12 @@ export default function BatchAssignPlayers() {
                                   }
                                 }}
                                 className="p-1 text-red-600 hover:text-red-800"
-                                title="Remove all player assignments"
+                                title="Remove assignments & matchups for this match"
                               >
                                 <XMarkIcon className="h-5 w-5" />
                               </button>
                             )}
-                            
-                            {/* Expand/collapse icon */}
-                            <ChevronRightIcon 
-                              className={`h-5 w-5 text-gray-400 transition-transform ${assignment.expanded ? 'rotate-90' : ''}`} 
-                            />
+                            {/* ... Expand icon ... */}
                           </div>
                         </div>
                       </div>
@@ -530,237 +526,216 @@ export default function BatchAssignPlayers() {
                     {/* Match details (only visible when expanded) */}
                     {assignment.expanded && (
                       <div className="px-4 py-4 bg-gray-50 border-t border-gray-200">
-                        {/* Singles Matchup Setup UI */}
-                        {assignment.isSingles && isMatchValid(assignment) && !assignment.needsMatchups && (
+                        {/* Singles Matchup Builder UI Trigger & Display - Updated Logic */}
+                        {assignment.isSingles && (
                           <div className="mb-4">
+                             {/* Button is always shown if initial selection is valid, text changes */} 
                             <button
                               type="button"
-                              onClick={() => {
-                                setAssignments(prev => prev.map(a => {
-                                  if (a.matchId === assignment.matchId) {
-                                    return { 
-                                      ...a, 
-                                      needsMatchups: true,
-                                      playerMatchups: a.playerMatchups || []
-                                    };
-                                  }
-                                  return a;
-                                }));
+                              onClick={() => { /* Show the builder */
+                                setAssignments(prev => prev.map(a => 
+                                  a.matchId === assignment.matchId 
+                                    ? { ...a, needsMatchups: true } 
+                                    : a
+                                ));
                               }}
-                              className="inline-flex items-center px-3 py-2 border border-blue-600 text-sm font-medium rounded-md text-blue-700 bg-white hover:bg-blue-50"
+                              className="inline-flex items-center px-3 py-2 border border-blue-600 text-sm font-medium rounded-md text-blue-700 bg-white hover:bg-blue-50 disabled:opacity-50"
+                              // Disable if builder is already showing or if initial selection isn't valid
+                              disabled={assignment.needsMatchups || !isMatchValid(assignment)} 
                             >
                               <UserGroupIcon className="h-4 w-4 mr-2" />
-                              Setup 1v1 Player Matchups
+                              {/* Change text based on whether matchups are already complete */} 
+                              {assignment.playerMatchups?.length === 2 && assignment.playerMatchups.every(m => m.homeId && m.awayId) 
+                                ? 'Review 1v1 Matchups' 
+                                : 'Set Up 1v1 Player Matchups'}
                             </button>
-                            <p className="mt-2 text-sm text-blue-600">
-                              For Singles matches, you need to set up which home player plays against which away player.
-                            </p>
+                            {/* Show status text only when builder is NOT showing */} 
+                            {!assignment.needsMatchups && isMatchValid(assignment) && (
+                               assignment.playerMatchups?.length === 2 && assignment.playerMatchups.every(m => m.homeId && m.awayId) ? (
+                                 <span className="ml-3 text-sm text-green-600">Matchups are set. Ready to save.</span>
+                               ) : (
+                                 <p className="mt-2 text-sm text-yellow-600">
+                                   Click button above to specify the two 1v1 pairings.
+                                 </p>
+                               )
+                             )}
+                             {!isMatchValid(assignment) && (
+                                <p className="mt-2 text-sm text-red-600">
+                                  Select 2 players per team before setting up matchups.
+                                </p>
+                             )}
                           </div>
                         )}
                         
-                        {/* Singles Matchup Builder UI */}
-                        {assignment.isSingles && assignment.needsMatchups && (
-                          <div className="mb-6 bg-blue-50 p-4 rounded-md border border-blue-200">
-                            <div className="flex justify-between items-center mb-3">
-                              <h3 className="text-md font-medium text-blue-900">
-                                1v1 Player Matchups
-                              </h3>
-                              {!assignment.playerMatchups || assignment.playerMatchups.length === 0 ? (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    // Auto-match players
-                                    const homeIds = [...assignment.homePlayers];
-                                    const awayIds = [...assignment.awayPlayers];
-                                    
-                                    const newMatchups = homeIds.map((homeId, index) => ({
-                                      homeId,
-                                      awayId: awayIds[index]
-                                    }));
-                                    
-                                    setAssignments(prev => prev.map(a => {
-                                      if (a.matchId === assignment.matchId) {
-                                        return { ...a, playerMatchups: newMatchups };
-                                      }
-                                      return a;
-                                    }));
-                                  }}
-                                  className="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200"
-                                >
-                                  Auto-Match Players
-                                </button>
-                              ) : (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    // Clear matchups
-                                    setAssignments(prev => prev.map(a => {
-                                      if (a.matchId === assignment.matchId) {
-                                        return { ...a, playerMatchups: [] };
-                                      }
-                                      return a;
-                                    }));
-                                  }}
-                                  className="text-xs px-2 py-1 bg-red-100 text-red-700 rounded hover:bg-red-200"
-                                >
-                                  Reset Matchups
-                                </button>
-                              )}
-                            </div>
-                            
-                            <p className="text-sm text-blue-700 mb-3">
-                              Specify which home player will compete against which away player (1 point per matchup)
-                            </p>
-                            
-                            <div className="space-y-3">
-                              {/* Existing matchups */}
-                              {assignment.playerMatchups?.map((matchup, idx) => (
-                                <div key={idx} className="flex items-center space-x-3">
-                                  <div className="flex-1 bg-white p-2 rounded">
-                                    <span className="font-medium">
-                                      {assignment.allHomePlayers.find(p => p.id === matchup.homeId)?.name || 'Player'}
-                                    </span>
-                                  </div>
-                                  <span>vs</span>
-                                  <div className="flex-1 bg-white p-2 rounded">
-                                    <span className="font-medium">
-                                      {assignment.allAwayPlayers.find(p => p.id === matchup.awayId)?.name || 'Player'}
-                                    </span>
-                                  </div>
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setAssignments(prev => prev.map(a => {
-                                        if (a.matchId === assignment.matchId) {
-                                          return { 
-                                            ...a, 
-                                            playerMatchups: (a.playerMatchups || []).filter((_, i) => i !== idx)
-                                          };
-                                        }
-                                        return a;
-                                      }));
-                                    }}
-                                    className="text-red-600 hover:text-red-800"
-                                  >
-                                    <XMarkIcon className="h-5 w-5" />
-                                  </button>
+                        {/* Singles Matchup Builder UI Content - Renders only when needsMatchups is true & initial selection valid */}
+                        {assignment.isSingles && assignment.needsMatchups && isMatchValid(assignment) && (
+                           <div className="mb-6 bg-blue-50 p-4 rounded-md border border-blue-200">
+                             {/* ... Builder Header (Title, Auto-Assign, Reset) ... */} 
+                             {/* ... Builder Instructions ... */} 
+                             <div className="space-y-3">
+                               {/* Matchup Pair 1 */}
+                                <div className="bg-white p-3 rounded-md border border-gray-200">
+                                   <h4 className="text-sm font-medium text-gray-700 mb-2">Matchup 1</h4>
+                                   <div className="grid grid-cols-2 gap-3 items-center">
+                                     <div>
+                                        <label className="block text-xs font-medium text-gray-500">Home Player</label>
+                                        <select
+                                          className="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
+                                          value={assignment.playerMatchups?.[0]?.homeId || ''}
+                                          onChange={(e) => {
+                                            const selectedHomeId = e.target.value;
+                                            const existingMatchups = assignment.playerMatchups || [];
+                                            const updatedMatchups = [...existingMatchups];
+                                            // Ensure we don't select the same home player twice
+                                            if (updatedMatchups[1]?.homeId === selectedHomeId) return;
+
+                                            if (!updatedMatchups[0]) updatedMatchups[0] = { homeId: '', awayId: ''}; 
+                                            updatedMatchups[0].homeId = selectedHomeId;
+
+                                            setAssignments(prev => prev.map(a => a.matchId === assignment.matchId ? { ...a, playerMatchups: updatedMatchups } : a));
+                                          }}
+                                          disabled={assignment.homePlayers.length !== 2}
+                                        >
+                                          <option value="" disabled>Select...</option>
+                                          {assignment.homePlayers.map(id => {
+                                             const player = assignment.allHomePlayers.find(p => p.id === id);
+                                             const isSelectedInOther = assignment.playerMatchups?.[1]?.homeId === id;
+                                             return (
+                                                <option key={id} value={id} disabled={isSelectedInOther} >
+                                                   {player?.name || 'Unknown'} {isSelectedInOther ? '(in Matchup 2)' : ''}
+                                                </option>
+                                             );
+                                          })}
+                                        </select>
+                                      </div>
+                                      <div>
+                                        <label className="block text-xs font-medium text-gray-500">Away Player</label>
+                                        <select
+                                          className="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
+                                          value={assignment.playerMatchups?.[0]?.awayId || ''}
+                                          onChange={(e) => {
+                                            const selectedAwayId = e.target.value;
+                                            const existingMatchups = assignment.playerMatchups || [];
+                                            const updatedMatchups = [...existingMatchups];
+                                            // Ensure we don't select the same away player twice
+                                            if (updatedMatchups[1]?.awayId === selectedAwayId) return;
+
+                                            if (!updatedMatchups[0]) updatedMatchups[0] = { homeId: '', awayId: ''}; 
+                                            updatedMatchups[0].awayId = selectedAwayId;
+
+                                            setAssignments(prev => prev.map(a => a.matchId === assignment.matchId ? { ...a, playerMatchups: updatedMatchups } : a));
+                                          }}
+                                          disabled={assignment.awayPlayers.length !== 2}
+                                        >
+                                          <option value="" disabled>Select...</option>
+                                          {assignment.awayPlayers.map(id => {
+                                             const player = assignment.allAwayPlayers.find(p => p.id === id);
+                                             const isSelectedInOther = assignment.playerMatchups?.[1]?.awayId === id;
+                                             return (
+                                                <option key={id} value={id} disabled={isSelectedInOther} >
+                                                   {player?.name || 'Unknown'} {isSelectedInOther ? '(in Matchup 1)' : ''}
+                                                </option>
+                                             );
+                                          })}
+                                        </select>
+                                      </div>
+                                   </div>
                                 </div>
-                              ))}
-                              
-                              {/* Create matchup UI */}
-                              {(!assignment.playerMatchups || assignment.playerMatchups.length === 0) && (
-                                <div className="bg-white p-4 rounded-md">
-                                  <h4 className="text-sm font-medium text-blue-800 mb-2">Set Up 1v1 Matchups</h4>
-                                  <p className="text-xs text-gray-600 mb-3">
-                                    Select which home player will play against which away player. The other two players will automatically be matched together.
-                                  </p>
-                                  
-                                  <div className="grid grid-cols-2 gap-4">
-                                    <div>
-                                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                                        {(() => {
-                                          const player = assignment.allHomePlayers.find(p => p.id === assignment.homePlayers[0]);
-                                          return player ? `${player.name} vs:` : 'Home Player 1 vs:';
-                                        })()}
-                                      </label>
-                                      <select
-                                        className="w-full rounded-md border-gray-300 shadow-sm"
-                                        onChange={(e) => {
-                                          const homeId = assignment.homePlayers[0]; // First home player
-                                          const awayId = e.target.value;
-                                          
-                                          // Create matchups for both pairs
-                                          setAssignments(prev => prev.map(a => {
-                                            if (a.matchId === assignment.matchId) {
-                                              // First selected pair
-                                              const firstMatchup = { homeId, awayId };
-                                              
-                                              // Other home player
-                                              const remainingHomePlayer = assignment.homePlayers[1];
-                                              
-                                              // Other away player
-                                              const remainingAwayPlayer = assignment.awayPlayers.find(id => 
-                                                id !== awayId
-                                              );
-                                              
-                                              if (remainingHomePlayer && remainingAwayPlayer) {
-                                                // Create both matchups
-                                                return { 
-                                                  ...a, 
-                                                  playerMatchups: [
-                                                    firstMatchup,
-                                                    { homeId: remainingHomePlayer, awayId: remainingAwayPlayer }
-                                                  ]
-                                                };
-                                              } else {
-                                                // Just create the first matchup
-                                                return { 
-                                                  ...a, 
-                                                  playerMatchups: [firstMatchup]
-                                                };
-                                              }
-                                            }
-                                            return a;
-                                          }));
-                                        }}
-                                      >
-                                        <option value="">Select away player</option>
-                                        {assignment.awayPlayers.map(id => {
-                                          const player = assignment.allAwayPlayers.find(p => p.id === id);
-                                          return (
-                                            <option key={id} value={id}>
-                                              {player?.name || 'Unknown player'}
-                                            </option>
-                                          );
-                                        })}
-                                      </select>
-                                    </div>
-                                    
-                                    <div className="flex items-center justify-center">
-                                      <span className="text-gray-500 italic">
-                                        {(() => {
-                                          const homePlayer = assignment.allHomePlayers.find(p => p.id === assignment.homePlayers[1]);
-                                          const homeName = homePlayer ? homePlayer.name : 'Home Player 2';
-                                          return `${homeName} will play vs the remaining Away Player`;
-                                        })()}
-                                      </span>
-                                    </div>
-                                  </div>
+
+                                {/* Matchup Pair 2 */}
+                                <div className="bg-white p-3 rounded-md border border-gray-200">
+                                   <h4 className="text-sm font-medium text-gray-700 mb-2">Matchup 2</h4>
+                                   <div className="grid grid-cols-2 gap-3 items-center">
+                                     <div>
+                                        <label className="block text-xs font-medium text-gray-500">Home Player</label>
+                                        <select
+                                          className="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
+                                          value={assignment.playerMatchups?.[1]?.homeId || ''}
+                                          onChange={(e) => {
+                                            const selectedHomeId = e.target.value;
+                                            const existingMatchups = assignment.playerMatchups || [];
+                                            const updatedMatchups = [...existingMatchups];
+                                            // Ensure we don't select the same home player twice
+                                            if (updatedMatchups[0]?.homeId === selectedHomeId) return;
+
+                                            if (!updatedMatchups[1]) updatedMatchups[1] = { homeId: '', awayId: ''}; 
+                                            updatedMatchups[1].homeId = selectedHomeId;
+
+                                            setAssignments(prev => prev.map(a => a.matchId === assignment.matchId ? { ...a, playerMatchups: updatedMatchups } : a));
+                                          }}
+                                          disabled={assignment.homePlayers.length !== 2}
+                                        >
+                                          <option value="" disabled>Select...</option>
+                                          {assignment.homePlayers.map(id => {
+                                             const player = assignment.allHomePlayers.find(p => p.id === id);
+                                             const isSelectedInOther = assignment.playerMatchups?.[0]?.homeId === id;
+                                             return (
+                                                <option key={id} value={id} disabled={isSelectedInOther} >
+                                                   {player?.name || 'Unknown'} {isSelectedInOther ? '(in Matchup 1)' : ''}
+                                                </option>
+                                             );
+                                          })}
+                                        </select>
+                                      </div>
+                                      <div>
+                                        <label className="block text-xs font-medium text-gray-500">Away Player</label>
+                                        <select
+                                          className="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-sm"
+                                          value={assignment.playerMatchups?.[1]?.awayId || ''}
+                                          onChange={(e) => {
+                                            const selectedAwayId = e.target.value;
+                                            const existingMatchups = assignment.playerMatchups || [];
+                                            const updatedMatchups = [...existingMatchups];
+                                            // Ensure we don't select the same away player twice
+                                            if (updatedMatchups[0]?.awayId === selectedAwayId) return;
+
+                                            if (!updatedMatchups[1]) updatedMatchups[1] = { homeId: '', awayId: ''}; 
+                                            updatedMatchups[1].awayId = selectedAwayId;
+
+                                            setAssignments(prev => prev.map(a => a.matchId === assignment.matchId ? { ...a, playerMatchups: updatedMatchups } : a));
+                                          }}
+                                          disabled={assignment.awayPlayers.length !== 2}
+                                        >
+                                          <option value="" disabled>Select...</option>
+                                          {assignment.awayPlayers.map(id => {
+                                             const player = assignment.allAwayPlayers.find(p => p.id === id);
+                                             const isSelectedInOther = assignment.playerMatchups?.[0]?.awayId === id;
+                                             return (
+                                                <option key={id} value={id} disabled={isSelectedInOther} >
+                                                   {player?.name || 'Unknown'} {isSelectedInOther ? '(in Matchup 1)' : ''}
+                                                </option>
+                                             );
+                                          })}
+                                        </select>
+                                      </div>
+                                   </div>
                                 </div>
-                              )}
-                              
-                              {/* Validation status */}
-                              {assignment.playerMatchups?.length === 2 ? (
-                                <div className="text-sm text-green-600 bg-green-50 p-2 rounded-md">
-                                  All matchups created! ✓
+                             </div>
+                             {/* Validation status - check completeness */}
+                             {assignment.playerMatchups?.length === 2 && assignment.playerMatchups.every(m => m.homeId && m.awayId) ? (
+                                <div className="mt-3 text-sm text-green-600 bg-green-50 p-2 rounded-md text-center">
+                                  All matchups assigned! ✓
                                 </div>
                               ) : (
-                                <div className="text-sm text-blue-600">
-                                  {2 - (assignment.playerMatchups?.length || 0)} more matchups needed.
+                                <div className="mt-3 text-sm text-blue-600 text-center">
+                                  {2 - (assignment.playerMatchups?.filter(m => m.homeId && m.awayId).length || 0)} more pairings needed.
                                 </div>
                               )}
-                            </div>
-                          </div>
+                           </div>
                         )}
                         
+                        {/* Player Selection Grids - Remove matchupsCreated logic from helper text */}
                         <div className="grid grid-cols-1 gap-x-8 gap-y-8 md:grid-cols-2">
                           {/* Home Team */}
                           <div className="bg-white shadow-sm ring-1 ring-gray-900/5 sm:rounded-xl overflow-hidden">
                             <div className="px-4 py-5 bg-blue-50 sm:px-6">
                               <h2 className="text-lg font-medium leading-6 text-gray-900">{assignment.homeTeam}</h2>
                               <p className="mt-1 max-w-2xl text-sm text-gray-500">
-                                {assignment.isSingles && (assignment.playerMatchups?.length === 2 || assignment.matchupsCreated) ? (
-                                  <span className="text-green-600">Player matchups created ✓</span>
-                                ) : (
-                                  <>
-                                    Select {assignment.requiredPlayers} players for this match
-                                    {!isMatchValid(assignment) && assignment.homePlayers.length > 0 && (
-                                      <span className="text-red-600 ml-2">
-                                        ({assignment.homePlayers.length}/{assignment.requiredPlayers} selected)
-                                        {assignment.isSingles && " - Singles matches need 2 players"}
-                                      </span>
-                                    )}
-                                  </>
+                                Select {assignment.requiredPlayers} players
+                                {!isMatchValid(assignment) && assignment.homePlayers.length > 0 && (
+                                  <span className="text-red-600 ml-2">
+                                    ({assignment.homePlayers.length}/{assignment.requiredPlayers} selected)
+                                  </span>
                                 )}
                               </p>
                             </div>
@@ -803,18 +778,11 @@ export default function BatchAssignPlayers() {
                             <div className="px-4 py-5 bg-red-50 sm:px-6">
                               <h2 className="text-lg font-medium leading-6 text-gray-900">{assignment.awayTeam}</h2>
                               <p className="mt-1 max-w-2xl text-sm text-gray-500">
-                                {assignment.isSingles && (assignment.playerMatchups?.length === 2 || assignment.matchupsCreated) ? (
-                                  <span className="text-green-600">Player matchups created ✓</span>
-                                ) : (
-                                  <>
-                                    Select {assignment.requiredPlayers} players for this match
-                                    {!isMatchValid(assignment) && assignment.awayPlayers.length > 0 && (
-                                      <span className="text-red-600 ml-2">
-                                        ({assignment.awayPlayers.length}/{assignment.requiredPlayers} selected)
-                                        {assignment.isSingles && " - Singles matches need 2 players"}
-                                      </span>
-                                    )}
-                                  </>
+                                Select {assignment.requiredPlayers} players
+                                {!isMatchValid(assignment) && assignment.awayPlayers.length > 0 && (
+                                  <span className="text-red-600 ml-2">
+                                    ({assignment.awayPlayers.length}/{assignment.requiredPlayers} selected)
+                                  </span>
                                 )}
                               </p>
                             </div>

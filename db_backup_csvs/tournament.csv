@@ -1,0 +1,2 @@
+id,name,year,location,startDate,endDate,buyIn,totalPrize,hasCTP,ctpPrizeAmount,hasSkins,skinsPrizeAmount,payoutStructure,createdAt,updatedAt
+36f3d474-c803-4370-be86-96369bd6ef5f,Spring Classic,2025,Gull Lake,2025-04-25 12:00:00,2025-04-26 12:00:00,150,,t,30,t,20,"{""1"": 100, ""2"": 0, ""3"": 0}",2025-04-15 18:00:21.313,2025-04-15 18:00:21.313
