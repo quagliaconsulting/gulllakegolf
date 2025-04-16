@@ -1,7 +1,30 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, PlayerPayment } from '@prisma/client';
 
 const prisma = new PrismaClient();
+
+// Helper function to process payments and determine latest status
+const getLatestPaymentStatuses = (payments: PlayerPayment[]) => {
+  const latestStatuses: { [key: string]: boolean } = {
+    BUY_IN: false,
+    CTP_ENTRY: false,
+    SKINS_ENTRY: false,
+  };
+  const latestPaymentsByType: { [key: string]: PlayerPayment } = {};
+
+  payments.forEach(payment => {
+    if (!latestPaymentsByType[payment.type] || 
+        new Date(payment.updatedAt) > new Date(latestPaymentsByType[payment.type].updatedAt)) {
+      latestPaymentsByType[payment.type] = payment;
+    }
+  });
+
+  Object.entries(latestPaymentsByType).forEach(([type, payment]) => {
+    latestStatuses[type] = payment.status === 'PAID';
+  });
+
+  return latestStatuses;
+};
 
 export default async function handler(
   req: NextApiRequest,
@@ -15,13 +38,22 @@ export default async function handler(
   
   if (req.method === 'GET') {
     try {
-      // Fetch tournament with all related data
+      // Fetch tournament with all related data, including payments ordered by updated date
       const tournament = await prisma.tournament.findUnique({
         where: { id },
         include: {
           teams: {
             include: {
-              players: true,
+              players: {
+                include: {
+                  payments: {
+                    where: { tournamentId: id }, // Ensure payments are for this tournament
+                    orderBy: {
+                      updatedAt: 'desc', // Get the latest first
+                    }
+                  },
+                }
+              },
             }
           },
           courses: {
@@ -63,6 +95,19 @@ export default async function handler(
       if (!tournament) {
         return res.status(404).json({ error: 'Tournament not found' });
       }
+      
+      // Process players to add latest payment statuses
+      const teamsWithPaymentStatus = tournament.teams.map(team => ({
+        ...team,
+        players: team.players.map(player => {
+          const paymentStatuses = getLatestPaymentStatuses(player.payments);
+          const { payments, ...playerWithoutPayments } = player;
+          return {
+            ...playerWithoutPayments,
+            paymentStatuses, // Add the computed statuses
+          };
+        }),
+      }));
       
       // Determine status based on dates
       const now = new Date();
@@ -109,9 +154,10 @@ export default async function handler(
         };
       });
       
-      // Return transformed tournament with status
+      // Return transformed tournament with status and processed players
       const result = {
         ...tournament,
+        teams: teamsWithPaymentStatus, // Use teams with processed player payment statuses
         status,
         schedules: formattedSchedules,
       };

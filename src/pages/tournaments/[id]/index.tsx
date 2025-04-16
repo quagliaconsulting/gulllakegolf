@@ -3,7 +3,7 @@ import Head from 'next/head';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import axios from 'axios';
-import useSWR from 'swr';
+import useSWR, { mutate } from 'swr';
 import {
   CalendarIcon,
   MapPinIcon,
@@ -17,6 +17,7 @@ import {
   UserIcon,
   ArrowPathIcon,
   DocumentTextIcon,
+  NoSymbolIcon, // Add icon for delete
 } from '@heroicons/react/24/outline';
 
 // Fetch function for SWR
@@ -169,6 +170,7 @@ export default function TournamentDetails() {
   const { id } = router.query;
   const [activeTab, setActiveTab] = useState('overview');
   const [matchPlayerData, setMatchPlayerData] = useState<Record<string, any>>({});
+  const [isDeletingMatch, setIsDeletingMatch] = useState<string | null>(null); // Track deleting state
 
   // Fetch tournament data only when ID is available
   const { data, error, isLoading } = useSWR(
@@ -240,19 +242,19 @@ export default function TournamentDetails() {
   // Effect to refresh payment data when the money tab is active
   useEffect(() => {
     if (activeTab === 'money' && tournament && tournament.teams) {
-      // Initialize or refresh payment status for all players
-      const refreshPaymentStatuses = async () => {
+      // Initialize or refresh payment status for all players using the API-provided statuses
+      const refreshPaymentStatuses = () => {
         try {
-          // Get the latest player data including payments
           const playerData: Record<string, { buyIn: boolean, ctp: boolean, skins: boolean }> = {};
           
-          // Update the state with the latest status
+          // Use the paymentStatuses object from the fetched tournament data
           tournament.teams.forEach((team: any) => {
             (team.players || []).forEach((player: any) => {
               playerData[player.id] = {
-                buyIn: player.payments?.some((p: any) => p.type === 'BUY_IN' && p.status === 'PAID') || false,
-                ctp: player.payments?.some((p: any) => p.type === 'CTP_ENTRY' && p.status === 'PAID') || false,
-                skins: player.payments?.some((p: any) => p.type === 'SKINS_ENTRY' && p.status === 'PAID') || false
+                // Directly use the pre-calculated statuses from the API
+                buyIn: player.paymentStatuses?.BUY_IN || false,
+                ctp: player.paymentStatuses?.CTP_ENTRY || false,
+                skins: player.paymentStatuses?.SKINS_ENTRY || false
               };
             });
           });
@@ -265,7 +267,7 @@ export default function TournamentDetails() {
       
       refreshPaymentStatuses();
     }
-  }, [activeTab, tournament]);
+  }, [activeTab, tournament]); // Depend on tournament data
 
   const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(null);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
@@ -297,6 +299,28 @@ export default function TournamentDetails() {
     } catch (error) {
       console.error('Error deleting tournament:', error);
       alert('Failed to delete tournament');
+    }
+  };
+
+  // Handle match deletion
+  const handleDeleteMatch = async (matchId: string) => {
+    if (!id) return;
+
+    if (!window.confirm('Are you sure you want to delete this match? This action cannot be undone.')) {
+      return;
+    }
+
+    setIsDeletingMatch(matchId); // Set deleting state for this match
+    try {
+      await axios.delete(`/api/matches/${matchId}`);
+      // Revalidate the schedules data to update the UI
+      mutate(`/api/schedules?tournamentId=${id}`);
+      alert('Match deleted successfully');
+    } catch (error) {
+      console.error('Error deleting match:', error);
+      alert('Failed to delete match. Please check the console for details.');
+    } finally {
+      setIsDeletingMatch(null); // Clear deleting state
     }
   };
 
@@ -911,15 +935,30 @@ export default function TournamentDetails() {
                                     {match.teams && Array.isArray(match.teams) ? match.teams.join(' vs. ') : (match.homeTeam && match.awayTeam ? `${match.homeTeam} vs. ${match.awayTeam}` : 'TBD')}
                                   </td>
                                   <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{match.course}</td>
-                                  <td className="whitespace-nowrap px-3 py-4 text-sm text-right space-x-2">
-                                    {/* Individual player assignment removed - use batch assign instead */}
-                                    <Link 
+                                  <td className="whitespace-nowrap px-3 py-4 text-sm text-right space-x-3"> {/* Increased space */}
+                                    {/* Scorecard Link */}
+                                    <Link
                                       href={`/tournaments/${id}/matches/${match.id}/scorecard`}
-                                      className="text-primary hover:text-primary/80"
+                                      className="text-primary hover:text-primary/80 inline-flex items-center"
                                       title="Scorecard (View/Edit)"
                                     >
-                                      <TableCellsIcon className="inline-block h-5 w-5" />
+                                      <TableCellsIcon className="h-5 w-5" />
                                     </Link>
+
+                                    {/* Delete Button */}
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeleteMatch(match.id)}
+                                      disabled={isDeletingMatch === match.id} // Disable while deleting this match
+                                      className={`text-red-600 hover:text-red-800 inline-flex items-center disabled:opacity-50 disabled:cursor-not-allowed`}
+                                      title="Delete Match"
+                                    >
+                                      {isDeletingMatch === match.id ? (
+                                        <ArrowPathIcon className="h-5 w-5 animate-spin" /> // Show spinner
+                                      ) : (
+                                        <TrashIcon className="h-5 w-5" /> // Show trash icon
+                                      )}
+                                    </button>
                                   </td>
                                 </tr>
                               ))}
@@ -2130,15 +2169,16 @@ export default function TournamentDetails() {
                           // Refetch the tournament data to get fresh payment info
                           const { data } = await axios.get(`/api/tournaments/${id}`);
                           if (data?.tournament) {
-                            // Update the state with fresh payment data
+                            // Update the state with fresh payment data using the API-provided statuses
                             const playerData: Record<string, { buyIn: boolean, ctp: boolean, skins: boolean }> = {};
                             
                             data.tournament.teams.forEach((team: any) => {
                               (team.players || []).forEach((player: any) => {
                                 playerData[player.id] = {
-                                  buyIn: player.payments?.some((p: any) => p.type === 'BUY_IN' && p.status === 'PAID') || false,
-                                  ctp: player.payments?.some((p: any) => p.type === 'CTP_ENTRY' && p.status === 'PAID') || false,
-                                  skins: player.payments?.some((p: any) => p.type === 'SKINS_ENTRY' && p.status === 'PAID') || false
+                                  // Directly use the pre-calculated statuses from the API response
+                                  buyIn: player.paymentStatuses?.BUY_IN || false,
+                                  ctp: player.paymentStatuses?.CTP_ENTRY || false,
+                                  skins: player.paymentStatuses?.SKINS_ENTRY || false
                                 };
                               });
                             });
@@ -2189,9 +2229,9 @@ export default function TournamentDetails() {
                             (team.players || []).map((player: any) => {
                               // Check payment statuses from state first, then from database
                               const playerStatus = paymentStatuses[player.id] || {
-                                buyIn: player.payments?.some((p: any) => p.type === 'BUY_IN' && p.status === 'PAID') || false,
-                                ctp: player.payments?.some((p: any) => p.type === 'CTP_ENTRY' && p.status === 'PAID') || false,
-                                skins: player.payments?.some((p: any) => p.type === 'SKINS_ENTRY' && p.status === 'PAID') || false
+                                buyIn: player.paymentStatuses?.BUY_IN || false,
+                                ctp: player.paymentStatuses?.CTP_ENTRY || false,
+                                skins: player.paymentStatuses?.SKINS_ENTRY || false
                               };
                               
                               return (
@@ -2231,14 +2271,15 @@ export default function TournamentDetails() {
                                         setSelectedPlayerId(player.id);
                                         setShowPaymentModal(true);
                                         
-                                        // Initialize player status if not already in state
+                                        // Initialize player status using the already available player object
+                                        // which should have the correct paymentStatuses from the API fetch
                                         if (!paymentStatuses[player.id]) {
                                           setPaymentStatuses({
                                             ...paymentStatuses,
                                             [player.id]: {
-                                              buyIn: player.payments?.some((p: any) => p.type === 'BUY_IN' && p.status === 'PAID') || false,
-                                              ctp: player.payments?.some((p: any) => p.type === 'CTP_ENTRY' && p.status === 'PAID') || false,
-                                              skins: player.payments?.some((p: any) => p.type === 'SKINS_ENTRY' && p.status === 'PAID') || false
+                                              buyIn: player.paymentStatuses?.BUY_IN || false,
+                                              ctp: player.paymentStatuses?.CTP_ENTRY || false,
+                                              skins: player.paymentStatuses?.SKINS_ENTRY || false
                                             }
                                           });
                                         }
@@ -2401,24 +2442,27 @@ export default function TournamentDetails() {
                                   setShowPaymentModal(false);
                                   setSelectedPlayerId(null);
                                   
-                                  // Refresh tournament data
+                                  // Refresh tournament data and update state using API statuses
                                   try {
+                                    // Fetch might be redundant if SWR/React Query handles caching,
+                                    // but explicit fetch ensures latest data after POST
                                     const { data } = await axios.get(`/api/tournaments/${id}`);
                                     if (data?.tournament) {
-                                      // Manually refresh the data in the current state
-                                      const updatedPlayerStatuses = {...paymentStatuses};
+                                      const updatedPlayerStatuses: Record<string, { buyIn: boolean, ctp: boolean, skins: boolean }> = {};
                                       
                                       data.tournament.teams.forEach((team: any) => {
                                         (team.players || []).forEach((player: any) => {
-                                          if (updatedPlayerStatuses[player.id]) {
-                                            updatedPlayerStatuses[player.id] = {
-                                              buyIn: player.payments?.some((p: any) => p.type === 'BUY_IN' && p.status === 'PAID') || false,
-                                              ctp: player.payments?.some((p: any) => p.type === 'CTP_ENTRY' && p.status === 'PAID') || false,
-                                              skins: player.payments?.some((p: any) => p.type === 'SKINS_ENTRY' && p.status === 'PAID') || false
-                                            };
-                                          }
+                                          // Directly use the pre-calculated statuses from the API response
+                                          updatedPlayerStatuses[player.id] = {
+                                            buyIn: player.paymentStatuses?.BUY_IN || false,
+                                            ctp: player.paymentStatuses?.CTP_ENTRY || false,
+                                            skins: player.paymentStatuses?.SKINS_ENTRY || false
+                                          };
                                         });
                                       });
+                                      
+                                      // Update the main tournament data state if using SWR/React Query isn't sufficient
+                                      // Example: setTournament(data.tournament); 
                                       
                                       setPaymentStatuses(updatedPlayerStatuses);
                                     }
@@ -2467,18 +2511,28 @@ export default function TournamentDetails() {
                           <tr>
                             <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Player</th>
                             <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Team</th>
-                            <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Buy-In</th>
-                            <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">CTP Winnings</th>
-                            <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Skins Winnings</th>
-                            <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total Earned</th>
-                            <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Net</th>
+                            <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase">Buy-In</th>
+                            <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase">CTP</th>
+                            <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase">Skins</th>
+                            <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase">Total Winnings</th>
+                            <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase">Net</th>
                           </tr>
                         </thead>
                         <tbody className="bg-white divide-y divide-gray-200">
                           {tournament.teams.flatMap((team: any) => 
                             (team.players || []).map((player: any) => {
-                              // Calculate buy-in
-                              const buyIn = tournament.buyIn || 0;
+                              // Get the latest payment status for this player from component state
+                              const playerStatus = paymentStatuses[player.id] || {
+                                buyIn: player.paymentStatuses?.BUY_IN || false,
+                                ctp: player.paymentStatuses?.CTP_ENTRY || false,
+                                skins: player.paymentStatuses?.SKINS_ENTRY || false
+                              };
+
+                              // Calculate costs only if paid/opted-in
+                              // Assuming prize amounts represent per-player entry fees
+                              const buyInCost = playerStatus.buyIn ? (tournament.buyIn || 0) : 0;
+                              const ctpCost = (tournament.hasCTP && playerStatus.ctp) ? (tournament.ctpPrizeAmount || 0) : 0; 
+                              const skinsCost = (tournament.hasSkins && playerStatus.skins) ? (tournament.skinsPrizeAmount || 0) : 0; 
                               
                               // Calculate CTP winnings
                               const ctpWinnings = tournament.ctpResults
@@ -2494,31 +2548,62 @@ export default function TournamentDetails() {
                                     .reduce((sum: number, skin: any) => sum + (skin.prize || 0), 0)
                                 : 0;
                               
-                              // Calculate total earned and net
+                              // Calculate total earned (winnings) and total cost (paid entries)
                               const totalEarned = ctpWinnings + skinsWinnings;
-                              const net = totalEarned - buyIn;
+                              const totalCost = buyInCost + ctpCost + skinsCost;
+                              const net = totalEarned - totalCost; // Net = Winnings - Costs (only if paid)
                               
                               return (
                                 <tr key={player.id}>
+                                  {/* Player Name */}
                                   <td className="px-3 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                                     {player.name}
                                   </td>
+                                  {/* Team Name */}
                                   <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-500">
                                     {team.name}
                                   </td>
-                                  <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-500">
-                                    ${buyIn.toFixed(2)}
+                                  {/* Buy-In Status & Cost */}
+                                  <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-500 text-center">
+                                    <span className={`block px-2 py-1 text-xs leading-5 font-semibold rounded-full ${playerStatus.buyIn ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
+                                      {playerStatus.buyIn ? 'Paid' : 'Pending'}
+                                    </span>
+                                    <span className="block mt-1">${buyInCost.toFixed(2)}</span>
                                   </td>
-                                  <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-500">
-                                    ${ctpWinnings.toFixed(2)}
+                                  {/* CTP Status & Cost/Winnings */}
+                                  <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-500 text-center">
+                                    {tournament.hasCTP ? (
+                                      <>
+                                        <span className={`block px-2 py-1 text-xs leading-5 font-semibold rounded-full ${playerStatus.ctp ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
+                                          {playerStatus.ctp ? 'Opted In' : 'Not In'}
+                                        </span>
+                                        <span className="block mt-1">Cost: ${ctpCost.toFixed(2)}</span>
+                                        <span className="block mt-1 text-green-600">Won: ${ctpWinnings.toFixed(2)}</span>
+                                      </>
+                                    ) : (
+                                      <span className="text-gray-400">N/A</span>
+                                    )}
                                   </td>
-                                  <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-500">
-                                    ${skinsWinnings.toFixed(2)}
+                                  {/* Skins Status & Cost/Winnings */}
+                                  <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-500 text-center">
+                                    {tournament.hasSkins ? (
+                                      <>
+                                        <span className={`block px-2 py-1 text-xs leading-5 font-semibold rounded-full ${playerStatus.skins ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
+                                          {playerStatus.skins ? 'Opted In' : 'Not In'}
+                                        </span>
+                                        <span className="block mt-1">Cost: ${skinsCost.toFixed(2)}</span>
+                                        <span className="block mt-1 text-green-600">Won: ${skinsWinnings.toFixed(2)}</span>
+                                      </>
+                                    ) : (
+                                      <span className="text-gray-400">N/A</span>
+                                    )}
                                   </td>
-                                  <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-900">
+                                  {/* Total Earned (Winnings) */}
+                                  <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-900 text-center">
                                     ${totalEarned.toFixed(2)}
                                   </td>
-                                  <td className="px-3 py-4 whitespace-nowrap text-sm font-medium">
+                                  {/* Net */}
+                                  <td className="px-3 py-4 whitespace-nowrap text-sm font-medium text-center">
                                     <span className={net >= 0 ? 'text-green-600' : 'text-red-600'}>
                                       ${net.toFixed(2)}
                                     </span>

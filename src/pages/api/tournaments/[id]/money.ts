@@ -109,17 +109,33 @@ export default async function handler(
       const ctpParticipants = ctpPaidPlayerIds.size;
       const skinsParticipants = skinsPaidPlayerIds.size;
       
-      // Organize payments by player and type - use the latest payment data
+      // First group payments by player and type to get latest status for each type
+      const playerPaymentsByType: Record<string, Record<string, any>> = {};
+      
+      // Process payments to find the latest entry for each player and payment type
       latestPayments.forEach(payment => {
-        if (!paymentsByPlayer[payment.playerId]) {
-          paymentsByPlayer[payment.playerId] = {};
+        if (!playerPaymentsByType[payment.playerId]) {
+          playerPaymentsByType[payment.playerId] = {};
         }
         
-        // Set all payment types with their status (PAID = true, PENDING = false)
-        paymentsByPlayer[payment.playerId][payment.type] = payment.status === 'PAID';
+        // If this payment type isn't recorded yet or is newer than existing record
+        if (!playerPaymentsByType[payment.playerId][payment.type] || 
+            new Date(payment.updatedAt) > new Date(playerPaymentsByType[payment.playerId][payment.type].updatedAt)) {
+          playerPaymentsByType[payment.playerId][payment.type] = payment;
+        }
+      });
+      
+      // Now create the final status map using only the latest payment for each type
+      Object.entries(playerPaymentsByType).forEach(([playerId, payments]) => {
+        if (!paymentsByPlayer[playerId]) {
+          paymentsByPlayer[playerId] = {};  
+        }
         
-        // Add debugging for each payment status
-        console.log(`Player ${payment.playerId} ${payment.type} status: ${payment.status} -> ${payment.status === 'PAID'}`);
+        // Process each payment type for this player
+        Object.entries(payments).forEach(([type, payment]: [string, any]) => {
+          paymentsByPlayer[playerId][type] = payment.status === 'PAID';
+          console.log(`Player ${playerId} ${type} LATEST status: ${payment.status} -> ${payment.status === 'PAID'}`);
+        });
       });
       
       // Calculate prize amounts based on entry fees
