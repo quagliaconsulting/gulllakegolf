@@ -217,7 +217,7 @@ export default async function handler(
     }
   } catch (error) {
     console.error('Error in schedule API:', error);
-    const errorMessage = error.message || 'Unknown error';
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     return res.status(500).json({ 
       error: 'Internal server error', 
       details: errorMessage,

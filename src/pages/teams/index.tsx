@@ -32,7 +32,7 @@ export default function Teams() {
               { id: '5', name: 'Kevin Brown', handicapIndex: 10.5 },
               { id: '6', name: 'Mark Johnson', handicapIndex: 7.8 },
             ],
-            tournament: { name: 'Spring Classic 2025' }
+            tournament: { id: '1', name: 'Spring Classic 2025' }
           },
           { 
             id: '2', 
@@ -45,7 +45,7 @@ export default function Teams() {
               { id: '11', name: 'Alex Robinson', handicapIndex: 9.3 },
               { id: '12', name: 'Dave Wilson', handicapIndex: 15.6 },
             ],
-            tournament: { name: 'Spring Classic 2025' }
+            tournament: { id: '1', name: 'Spring Classic 2025' }
           },
         ]
       }
@@ -172,11 +172,11 @@ export default function Teams() {
                   </h3>
                   <div className="flex space-x-2">
                     <button
-                      onClick={() => router.push(`/teams/${team.id}/edit`)}
+                      onClick={() => router.push(`/tournaments/${team.tournament.id}/teams/${team.id}/edit`)}
                       className="text-gray-400 hover:text-gray-500"
                     >
                       <PencilIcon className="h-5 w-5" />
-                      <span className="sr-only">Edit</span>
+                      <span className="sr-only">Edit Team</span>
                     </button>
                     <button
                       onClick={() => handleDeleteTeam(team.id)}

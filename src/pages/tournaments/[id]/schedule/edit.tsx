@@ -240,8 +240,10 @@ export default function EditSchedule() {
       console.error('Error saving schedule:', error);
       let errorMessage = 'Failed to save schedule. Please try again.';
       
-      if (error.response && error.response.data) {
-        errorMessage += ' Error: ' + (error.response.data.details || error.response.data.error || error.message);
+      // Type assertion for error object
+      const err = error as any;
+      if (err.response && err.response.data) {
+        errorMessage += ' Error: ' + (err.response.data.details || err.response.data.error || err.message);
       }
       
       alert(errorMessage);

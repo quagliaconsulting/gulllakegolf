@@ -77,7 +77,8 @@ export default async function handler(
           status = 'active';
         }
         
-        // Return transformed tournament
+        // Return transformed tournament with type assertions
+        const t: any = tournament; // Cast to any to access the new fields
         return {
           id: tournament.id,
           name: tournament.name,
@@ -85,10 +86,19 @@ export default async function handler(
           year: tournament.year,
           startDate: tournament.startDate,
           endDate: tournament.endDate,
+          // Financial fields
+          buyIn: t.buyIn || null,
+          totalPrize: t.totalPrize || null,
+          hasCTP: t.hasCTP || false,
+          ctpPrizeAmount: t.ctpPrizeAmount || null,
+          hasSkins: t.hasSkins || false,
+          skinsPrizeAmount: t.skinsPrizeAmount || null,
+          payoutStructure: t.payoutStructure || null,
           status,
           teams: tournament.teams.map(team => team.name),
           players: playerCount,
           matches: matchCount,
+          formatMultipliers: tournament.formatMultipliers,
           createdAt: tournament.createdAt,
         };
       }));
@@ -107,6 +117,14 @@ export default async function handler(
         location, 
         startDate, 
         endDate, 
+        // Financial fields
+        buyIn,
+        totalPrize,
+        hasCTP,
+        ctpPrizeAmount,
+        hasSkins,
+        skinsPrizeAmount,
+        payoutStructure,
         teamNames,
         formatMultipliers
       } = req.body;
@@ -119,17 +137,34 @@ export default async function handler(
           location,
           startDate: formatUTCDate(startDate),
           endDate: formatUTCDate(endDate),
+          // Financial fields
+          buyIn: buyIn || null,
+          totalPrize: totalPrize || null,
+          hasCTP: hasCTP || false,
+          ctpPrizeAmount: ctpPrizeAmount || null,
+          hasSkins: hasSkins || false,
+          skinsPrizeAmount: skinsPrizeAmount || null,
+          payoutStructure: payoutStructure || null,
           teams: {
-            create: teamNames.map((team: { name: string }) => ({
-              name: team.name
+            create: teamNames.map((team: { name: string, isHomeTeam?: boolean }, index: number) => ({
+              name: team.name,
+              metadata: { 
+                isHomeTeam: team.isHomeTeam === undefined ? index === 0 : team.isHomeTeam 
+              }
             }))
           },
           formatMultipliers: {
-            create: formatMultipliers ? formatMultipliers : [
-              { formatName: 'Best Ball', multiplier: 1.0 },
-              { formatName: 'Scramble', multiplier: 0.4 },
-              { formatName: 'Alternate Shot', multiplier: 0.7 },
-              { formatName: 'Chapman', multiplier: 0.6 },
+            create: formatMultipliers ? formatMultipliers.map((format: any) => ({
+              formatName: format.formatName,
+              multiplier: format.multiplier,
+              points: format.points || 1.0,
+              halfPoints: format.halfPoints || 0.5,
+              isFourManTeam: format.isFourManTeam || false
+            })) : [
+              { formatName: 'Best Ball', multiplier: 1.0, points: 1.0, halfPoints: 0.5 },
+              { formatName: 'Scramble', multiplier: 0.4, points: 1.0, halfPoints: 0.5 },
+              { formatName: 'Alternate Shot', multiplier: 0.7, points: 1.0, halfPoints: 0.5 },
+              { formatName: 'Chapman', multiplier: 0.6, points: 1.0, halfPoints: 0.5 },
             ]
           }
         },

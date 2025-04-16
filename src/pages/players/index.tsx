@@ -90,10 +90,10 @@ export default function Players() {
     if (!confirm('Are you sure you want to delete this player?')) return;
 
     try {
-      // In a real implementation we would call the API
-      // await axios.delete(`/api/players/${id}`);
+      // Call the API to delete the player
+      await axios.delete(`/api/players/${id}`);
       
-      // For now, just update the client-side cache
+      // Update the client-side cache
       const updatedPlayers = data.players.filter((player: any) => player.id !== id);
       mutate({ players: updatedPlayers }, false);
       

@@ -4,7 +4,17 @@ import Head from 'next/head';
 import Link from 'next/link';
 import axios from 'axios';
 import useSWR from 'swr';
-import { ArrowLeftIcon, PrinterIcon, UserIcon, LockClosedIcon, LockOpenIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
+import { 
+  ArrowLeftIcon, 
+  PrinterIcon, 
+  UserIcon, 
+  LockClosedIcon, 
+  LockOpenIcon, 
+  ArrowPathIcon,
+  AdjustmentsHorizontalIcon,
+  FlagIcon,
+  StarIcon
+} from '@heroicons/react/24/outline';
 
 // Fetch function for SWR
 const fetcher = (url: string) => axios.get(url).then(res => res.data);
@@ -23,6 +33,21 @@ export default function ScorecardView() {
   const [saved, setSaved] = useState(false);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [passwordInput, setPasswordInput] = useState('');
+  const [showCtpModal, setShowCtpModal] = useState(false);
+  const [ctpModalData, setCtpModalData] = useState<{
+    holeId: string;
+    holeName: string;
+    playerId: string;
+    distance: string;
+  }>({ holeId: '', holeName: '', playerId: '', distance: '' });
+  const [showSkinsModal, setShowSkinsModal] = useState(false);
+  const [skinsModalData, setSkinsModalData] = useState<{
+    holeNumber: number;
+    playerId: string;
+    score: number;
+  }>({ holeNumber: 0, playerId: '', score: 0 });
+  const [ctpResults, setCtpResults] = useState<any[]>([]);
+  const [skinsResults, setSkinsResults] = useState<any[]>([]);
 
   // Fetch match data with scores
   const { data, error, isLoading, mutate } = useSWR(
@@ -42,6 +67,24 @@ export default function ScorecardView() {
     }
   );
 
+  // Fetch tournament CTP results
+  const { data: ctpApiData, mutate: mutateCtp } = useSWR(
+    id ? `/api/tournaments/${id}/ctp` : null,
+    fetcher,
+    {
+      revalidateOnFocus: false
+    }
+  );
+
+  // Fetch tournament Skins results
+  const { data: skinsApiData, mutate: mutateSkins } = useSWR(
+    id ? `/api/tournaments/${id}/skins` : null,
+    fetcher,
+    {
+      revalidateOnFocus: false
+    }
+  );
+
   // Initialize scores when match changes
   useEffect(() => {
     if (data?.match?.holes) {
@@ -53,6 +96,19 @@ export default function ScorecardView() {
       setScores(initialScores);
     }
   }, [data?.match?.holes]);
+
+  // Initialize CTP and Skins results
+  useEffect(() => {
+    if (ctpApiData) {
+      setCtpResults(ctpApiData);
+    }
+  }, [ctpApiData]);
+
+  useEffect(() => {
+    if (skinsApiData) {
+      setSkinsResults(skinsApiData);
+    }
+  }, [skinsApiData]);
 
   // Handle printing
   const handlePrint = () => {
@@ -148,6 +204,114 @@ export default function ScorecardView() {
     } finally {
       setSaving(false);
     }
+  };
+  
+  // Handle opening CTP modal
+  const openCtpModal = (hole: any) => {
+    // Only allow CTP on par 3 holes
+    if (hole.par !== 3) {
+      alert('CTP can only be recorded on par 3 holes');
+      return;
+    }
+    
+    setCtpModalData({
+      holeId: hole.id,
+      holeName: `Hole ${hole.number}`,
+      playerId: '',
+      distance: ''
+    });
+    setShowCtpModal(true);
+  };
+  
+  // Handle saving CTP
+  const handleSaveCtp = async () => {
+    if (!ctpModalData.holeId || !ctpModalData.playerId) {
+      alert('Please select a player');
+      return;
+    }
+    
+    try {
+      await axios.post(`/api/tournaments/${id}/ctp`, {
+        holeId: ctpModalData.holeId,
+        playerId: ctpModalData.playerId,
+        distance: ctpModalData.distance || undefined,
+        round: 1 // Default to round 1
+      });
+      
+      // Close modal and refresh data
+      setShowCtpModal(false);
+      mutateCtp();
+      
+      // Show success message
+      alert('CTP recorded successfully');
+    } catch (error) {
+      console.error('Error saving CTP:', error);
+      alert('Failed to record CTP. Please try again.');
+    }
+  };
+  
+  // Handle opening Skins modal
+  const openSkinsModal = (hole: any) => {
+    if (hole.homeGross === null || hole.awayGross === null) {
+      alert('Both teams must have scores entered before recording a skin');
+      return;
+    }
+    
+    setSkinsModalData({
+      holeNumber: hole.number,
+      playerId: '',
+      score: hole.homeGross < hole.awayGross ? hole.homeGross : hole.awayGross
+    });
+    setShowSkinsModal(true);
+  };
+  
+  // Handle saving Skins
+  const handleSaveSkins = async () => {
+    if (!skinsModalData.playerId || !skinsModalData.holeNumber) {
+      alert('Please select a player');
+      return;
+    }
+    
+    try {
+      await axios.post(`/api/tournaments/${id}/skins`, {
+        playerId: skinsModalData.playerId,
+        matchId: matchId,
+        holeNumber: skinsModalData.holeNumber,
+        score: skinsModalData.score
+      });
+      
+      // Close modal and refresh data
+      setShowSkinsModal(false);
+      mutateSkins();
+      
+      // Show success message
+      alert('Skin recorded successfully');
+    } catch (error) {
+      console.error('Error saving Skin:', error);
+      alert('Failed to record Skin. Please try again.');
+    }
+  };
+  
+  // Check if a hole has a CTP result
+  const hasCtpResult = (holeNumber: number) => {
+    return ctpResults.some(ctp => ctp.hole.number === holeNumber);
+  };
+  
+  // Check if a hole has a Skin result
+  const hasSkinResult = (holeNumber: number) => {
+    return skinsResults.some(skin => skin.holeNumber === holeNumber);
+  };
+  
+  // Get CTP winner for a hole
+  const getCtpWinner = (holeNumber: number) => {
+    const ctp = ctpResults.find(ctp => ctp.hole.number === holeNumber);
+    return ctp ? ctp.player : null;
+  };
+  
+  // Get Skin winner for a hole
+  const getSkinWinner = (holeNumber: number) => {
+    const skin = skinsResults.find(skin => skin.holeNumber === holeNumber);
+    return skin ? skin.player : null;
   };
 
   // Group holes by front 9 and back 9
@@ -339,8 +503,10 @@ export default function ScorecardView() {
         <div className="bg-white shadow-sm ring-1 ring-gray-900/5 sm:rounded-xl overflow-hidden mb-6 print:shadow-none print:ring-0 print:mb-4">
           <div className="px-4 py-4 sm:px-6 grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="flex flex-col">
-              <span className="text-sm font-medium text-gray-500">Home Team</span>
-              <span className="text-base font-semibold text-forest-green">{match.homeTeam}</span>
+              <span className="text-sm font-medium text-gray-500">
+                {data?.match?.homeTeamIsReal === true ? "Home Team" : (data?.match?.awayTeamIsReal === true ? "Away Team" : "Home Team")}
+              </span>
+              <span className={`text-base font-semibold ${data?.match?.homeTeamIsReal === true ? "text-forest-green" : "text-blue-600"}`}>{match.homeTeam}</span>
               {!match.isFourManTeam && (
                 <span className="text-sm text-gray-500">Handicap: {match.homeTeamHandicap.toFixed(1)}</span>
               )}
@@ -362,10 +528,31 @@ export default function ScorecardView() {
                 {totalResults.home} holes to {totalResults.away} 
                 {totalResults.ties > 0 ? ` (${totalResults.ties} tied)` : ''}
               </span>
+              {/* Debug data */}
+              <span className="block mt-1 text-[10px] text-gray-500">
+                Home: {data?.match?.homeTeamIsReal ? "TRUE" : "FALSE"} / 
+                Away: {data?.match?.awayTeamIsReal ? "TRUE" : "FALSE"}
+              </span>
+              
+              {/* Display if this is part of a foursome */}
+              {data?.match?.playerToPlayerMatch && data?.match?.foursomeGroupId && (
+                <div className="mt-2 text-xs">
+                  <span className="inline-flex items-center rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-800">
+                    Singles Foursome Match
+                  </span>
+                  {/* Debug data */}
+                  <span className="block mt-1 text-[10px] text-gray-500">
+                    Home: {data?.match?.homeTeamIsReal ? "TRUE" : "FALSE"} / 
+                    Away: {data?.match?.awayTeamIsReal ? "TRUE" : "FALSE"}
+                  </span>
+                </div>
+              )}
             </div>
             <div className="flex flex-col text-right">
-              <span className="text-sm font-medium text-gray-500">Away Team</span>
-              <span className="text-base font-semibold text-blue-600">{match.awayTeam}</span>
+              <span className="text-sm font-medium text-gray-500">
+                {data?.match?.awayTeamIsReal === true ? "Home Team" : (data?.match?.homeTeamIsReal === true ? "Away Team" : "Away Team")}
+              </span>
+              <span className={`text-base font-semibold ${data?.match?.awayTeamIsReal === true ? "text-forest-green" : "text-blue-600"}`}>{match.awayTeam}</span>
               {!match.isFourManTeam && (
                 <span className="text-sm text-gray-500">Handicap: {match.awayTeamHandicap.toFixed(1)}</span>
               )}
@@ -381,6 +568,29 @@ export default function ScorecardView() {
               )}
             </div>
           </div>
+          
+          {/* Foursome Group Info */}
+          {data?.match?.playerToPlayerMatch && data?.match?.foursomeGroupId && data?.foursomeMatches && (
+            <div className="px-4 py-3 border-t border-gray-200">
+              <h4 className="text-sm font-medium text-gray-700 mb-2">Other Matches in this Foursome:</h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                {data.foursomeMatches.filter((m: any) => m.id !== match.id).map((otherMatch: any) => (
+                  <Link 
+                    key={otherMatch.id} 
+                    href={`/tournaments/${id}/matches/${otherMatch.id}/scorecard`}
+                    className="text-xs border border-gray-200 rounded-md p-2 hover:bg-gray-50"
+                  >
+                    <div className="font-medium">
+                      {otherMatch.homePlayers?.[0]?.name || 'Home Player'} vs {otherMatch.awayPlayers?.[0]?.name || 'Away Player'}
+                    </div>
+                    <div className="text-gray-500 mt-1">
+                      {otherMatch.result ? otherMatch.result : 'No score'}
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Front Nine */}
@@ -408,7 +618,7 @@ export default function ScorecardView() {
                                 return (
                                   <>
                                     {homeStrokes > 0 ? (
-                                      <span className="inline-flex items-center justify-center rounded bg-green-100 px-1.5 py-0.5 text-[10px] font-medium text-forest-green">
+                                      <span className={`inline-flex items-center justify-center rounded px-1.5 py-0.5 text-[10px] font-medium ${data?.match?.homeTeamIsReal === true ? "bg-green-100 text-forest-green" : "bg-blue-100 text-blue-700"}`}>
                                         {homeStrokes > 1 ? homeStrokes : '•'}
                                       </span>
                                     ) : (
@@ -416,7 +626,7 @@ export default function ScorecardView() {
                                     )}
                                     <span className="text-gray-400 text-[8px]">/</span>
                                     {awayStrokes > 0 ? (
-                                      <span className="inline-flex items-center justify-center rounded bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium text-blue-700">
+                                      <span className={`inline-flex items-center justify-center rounded px-1.5 py-0.5 text-[10px] font-medium ${data?.match?.awayTeamIsReal === true ? "bg-green-100 text-forest-green" : "bg-blue-100 text-blue-700"}`}>
                                         {awayStrokes > 1 ? awayStrokes : '•'}
                                       </span>
                                     ) : (
@@ -444,12 +654,12 @@ export default function ScorecardView() {
                   </tr>
                   
                   {/* Home Team Gross */}
-                  <tr className="bg-green-50">
-                    <td className="whitespace-nowrap py-2 pl-3 pr-3 text-xs font-medium text-forest-green">
+                  <tr className={data?.match?.homeTeamIsReal === true ? "bg-green-50" : "bg-blue-50"}>
+                    <td className={`whitespace-nowrap py-2 pl-3 pr-3 text-xs font-medium ${data?.match?.homeTeamIsReal === true ? "text-forest-green" : "text-blue-800"}`}>
                       {match.homeTeam} (Gross)
                     </td>
                     {frontNine.map((hole: any) => (
-                      <td key={hole.number} className="whitespace-nowrap px-3 py-2 text-center text-xs text-forest-green">
+                      <td key={hole.number} className={`whitespace-nowrap px-3 py-2 text-center text-xs ${data?.match?.homeTeamIsReal === true ? "text-forest-green" : "text-blue-800"}`}>
                         {editMode ? (
                           <input
                             type="number"
@@ -463,18 +673,18 @@ export default function ScorecardView() {
                         )}
                       </td>
                     ))}
-                    <td className="whitespace-nowrap px-3 py-2 text-center text-xs font-medium text-forest-green">
+                    <td className={`whitespace-nowrap px-3 py-2 text-center text-xs font-medium ${data?.match?.homeTeamIsReal === true ? "text-forest-green" : "text-blue-800"}`}>
                       {frontNineTotals.homeGross}
                     </td>
                   </tr>
                   
                   {/* Away Team Gross */}
-                  <tr className="bg-blue-50">
-                    <td className="whitespace-nowrap py-2 pl-3 pr-3 text-xs font-medium text-blue-800">
+                  <tr className={data?.match?.awayTeamIsReal === true ? "bg-green-50" : "bg-blue-50"}>
+                    <td className={`whitespace-nowrap py-2 pl-3 pr-3 text-xs font-medium ${data?.match?.awayTeamIsReal === true ? "text-forest-green" : "text-blue-800"}`}>
                       {match.awayTeam} (Gross)
                     </td>
                     {frontNine.map((hole: any) => (
-                      <td key={hole.number} className="whitespace-nowrap px-3 py-2 text-center text-xs text-blue-800">
+                      <td key={hole.number} className={`whitespace-nowrap px-3 py-2 text-center text-xs ${data?.match?.awayTeamIsReal === true ? "text-forest-green" : "text-blue-800"}`}>
                         {editMode ? (
                           <input
                             type="number"
@@ -488,7 +698,7 @@ export default function ScorecardView() {
                         )}
                       </td>
                     ))}
-                    <td className="whitespace-nowrap px-3 py-2 text-center text-xs font-medium text-blue-800">
+                    <td className={`whitespace-nowrap px-3 py-2 text-center text-xs font-medium ${data?.match?.awayTeamIsReal === true ? "text-forest-green" : "text-blue-800"}`}>
                       {frontNineTotals.awayGross}
                     </td>
                   </tr>
@@ -533,9 +743,9 @@ export default function ScorecardView() {
                     {frontNine.map((hole: any) => (
                       <td key={hole.number} className="whitespace-nowrap px-3 py-2 text-center text-xs">
                         {hole.winner === 'home' ? (
-                          <span className="text-forest-green font-medium">H</span>
+                          <span className={`font-medium ${data?.match?.homeTeamIsReal === true ? "text-forest-green" : "text-blue-600"}`}>H</span>
                         ) : hole.winner === 'away' ? (
-                          <span className="text-blue-600 font-medium">A</span>
+                          <span className={`font-medium ${data?.match?.awayTeamIsReal === true ? "text-forest-green" : "text-blue-600"}`}>A</span>
                         ) : hole.winner === 'tie' ? (
                           <span className="text-gray-500 font-medium">T</span>
                         ) : (
@@ -552,6 +762,65 @@ export default function ScorecardView() {
                         <span className="text-gray-500">T</span>
                       )}
                     </td>
+                  </tr>
+                  
+                  {/* CTP/Skins Row */}
+                  <tr className="print-hidden">
+                    <td className="whitespace-nowrap py-2 pl-3 pr-3 text-xs font-medium text-gray-900">Competitions</td>
+                    {frontNine.map((hole: any) => (
+                      <td key={hole.number} className="whitespace-nowrap px-3 py-2 text-center text-xs">
+                        <div className="flex flex-col space-y-1">
+                          {/* CTP Indicator */}
+                          {hole.par === 3 && (
+                            <div>
+                              {hasCtpResult(hole.number) ? (
+                                <div className="text-xs text-green-600 font-semibold flex items-center justify-center">
+                                  <FlagIcon className="h-3 w-3 mr-1" />
+                                  <span title={`CTP: ${getCtpWinner(hole.number)?.name}`}>
+                                    CTP
+                                  </span>
+                                </div>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => openCtpModal(hole)}
+                                  className="text-xs text-gray-500 hover:text-green-600 flex items-center justify-center"
+                                  title="Record CTP"
+                                >
+                                  <FlagIcon className="h-3 w-3 mr-1" />
+                                  CTP
+                                </button>
+                              )}
+                            </div>
+                          )}
+                          
+                          {/* Skins Indicator */}
+                          <div>
+                            {hasSkinResult(hole.number) ? (
+                              <div className="text-xs text-amber-600 font-semibold flex items-center justify-center">
+                                <StarIcon className="h-3 w-3 mr-1" />
+                                <span title={`Skin: ${getSkinWinner(hole.number)?.name}`}>
+                                  Skin
+                                </span>
+                              </div>
+                            ) : (
+                              hole.homeGross !== null && hole.awayGross !== null && (
+                                <button
+                                  type="button"
+                                  onClick={() => openSkinsModal(hole)}
+                                  className="text-xs text-gray-500 hover:text-amber-600 flex items-center justify-center"
+                                  title="Record Skin"
+                                >
+                                  <StarIcon className="h-3 w-3 mr-1" />
+                                  Skin
+                                </button>
+                              )
+                            )}
+                          </div>
+                        </div>
+                      </td>
+                    ))}
+                    <td className="whitespace-nowrap px-3 py-2 text-center text-xs"></td>
                   </tr>
                 </tbody>
               </table>
@@ -584,7 +853,7 @@ export default function ScorecardView() {
                                 return (
                                   <>
                                     {homeStrokes > 0 ? (
-                                      <span className="inline-flex items-center justify-center rounded bg-green-100 px-1.5 py-0.5 text-[10px] font-medium text-forest-green">
+                                      <span className={`inline-flex items-center justify-center rounded px-1.5 py-0.5 text-[10px] font-medium ${data?.match?.homeTeamIsReal === true ? "bg-green-100 text-forest-green" : "bg-blue-100 text-blue-700"}`}>
                                         {homeStrokes > 1 ? homeStrokes : '•'}
                                       </span>
                                     ) : (
@@ -592,7 +861,7 @@ export default function ScorecardView() {
                                     )}
                                     <span className="text-gray-400 text-[8px]">/</span>
                                     {awayStrokes > 0 ? (
-                                      <span className="inline-flex items-center justify-center rounded bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium text-blue-700">
+                                      <span className={`inline-flex items-center justify-center rounded px-1.5 py-0.5 text-[10px] font-medium ${data?.match?.awayTeamIsReal === true ? "bg-green-100 text-forest-green" : "bg-blue-100 text-blue-700"}`}>
                                         {awayStrokes > 1 ? awayStrokes : '•'}
                                       </span>
                                     ) : (
@@ -620,12 +889,12 @@ export default function ScorecardView() {
                   </tr>
                   
                   {/* Home Team Gross */}
-                  <tr className="bg-green-50">
-                    <td className="whitespace-nowrap py-2 pl-3 pr-3 text-xs font-medium text-forest-green">
+                  <tr className={data?.match?.homeTeamIsReal === true ? "bg-green-50" : "bg-blue-50"}>
+                    <td className={`whitespace-nowrap py-2 pl-3 pr-3 text-xs font-medium ${data?.match?.homeTeamIsReal === true ? "text-forest-green" : "text-blue-800"}`}>
                       {match.homeTeam} (Gross)
                     </td>
                     {backNine.map((hole: any) => (
-                      <td key={hole.number} className="whitespace-nowrap px-3 py-2 text-center text-xs text-forest-green">
+                      <td key={hole.number} className={`whitespace-nowrap px-3 py-2 text-center text-xs ${data?.match?.homeTeamIsReal === true ? "text-forest-green" : "text-blue-800"}`}>
                         {editMode ? (
                           <input
                             type="number"
@@ -639,18 +908,18 @@ export default function ScorecardView() {
                         )}
                       </td>
                     ))}
-                    <td className="whitespace-nowrap px-3 py-2 text-center text-xs font-medium text-forest-green">
+                    <td className={`whitespace-nowrap px-3 py-2 text-center text-xs font-medium ${data?.match?.homeTeamIsReal === true ? "text-forest-green" : "text-blue-800"}`}>
                       {backNineTotals.homeGross}
                     </td>
                   </tr>
                   
                   {/* Away Team Gross */}
-                  <tr className="bg-blue-50">
-                    <td className="whitespace-nowrap py-2 pl-3 pr-3 text-xs font-medium text-blue-800">
+                  <tr className={data?.match?.awayTeamIsReal === true ? "bg-green-50" : "bg-blue-50"}>
+                    <td className={`whitespace-nowrap py-2 pl-3 pr-3 text-xs font-medium ${data?.match?.awayTeamIsReal === true ? "text-forest-green" : "text-blue-800"}`}>
                       {match.awayTeam} (Gross)
                     </td>
                     {backNine.map((hole: any) => (
-                      <td key={hole.number} className="whitespace-nowrap px-3 py-2 text-center text-xs text-blue-800">
+                      <td key={hole.number} className={`whitespace-nowrap px-3 py-2 text-center text-xs ${data?.match?.awayTeamIsReal === true ? "text-forest-green" : "text-blue-800"}`}>
                         {editMode ? (
                           <input
                             type="number"
@@ -664,7 +933,7 @@ export default function ScorecardView() {
                         )}
                       </td>
                     ))}
-                    <td className="whitespace-nowrap px-3 py-2 text-center text-xs font-medium text-blue-800">
+                    <td className={`whitespace-nowrap px-3 py-2 text-center text-xs font-medium ${data?.match?.awayTeamIsReal === true ? "text-forest-green" : "text-blue-800"}`}>
                       {backNineTotals.awayGross}
                     </td>
                   </tr>
@@ -709,9 +978,9 @@ export default function ScorecardView() {
                     {backNine.map((hole: any) => (
                       <td key={hole.number} className="whitespace-nowrap px-3 py-2 text-center text-xs">
                         {hole.winner === 'home' ? (
-                          <span className="text-forest-green font-medium">H</span>
+                          <span className={`font-medium ${data?.match?.homeTeamIsReal === true ? "text-forest-green" : "text-blue-600"}`}>H</span>
                         ) : hole.winner === 'away' ? (
-                          <span className="text-blue-600 font-medium">A</span>
+                          <span className={`font-medium ${data?.match?.awayTeamIsReal === true ? "text-forest-green" : "text-blue-600"}`}>A</span>
                         ) : hole.winner === 'tie' ? (
                           <span className="text-gray-500 font-medium">T</span>
                         ) : (
@@ -729,6 +998,65 @@ export default function ScorecardView() {
                       )}
                     </td>
                   </tr>
+                  
+                  {/* CTP/Skins Row */}
+                  <tr className="print-hidden">
+                    <td className="whitespace-nowrap py-2 pl-3 pr-3 text-xs font-medium text-gray-900">Competitions</td>
+                    {backNine.map((hole: any) => (
+                      <td key={hole.number} className="whitespace-nowrap px-3 py-2 text-center text-xs">
+                        <div className="flex flex-col space-y-1">
+                          {/* CTP Indicator */}
+                          {hole.par === 3 && (
+                            <div>
+                              {hasCtpResult(hole.number) ? (
+                                <div className="text-xs text-green-600 font-semibold flex items-center justify-center">
+                                  <FlagIcon className="h-3 w-3 mr-1" />
+                                  <span title={`CTP: ${getCtpWinner(hole.number)?.name}`}>
+                                    CTP
+                                  </span>
+                                </div>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => openCtpModal(hole)}
+                                  className="text-xs text-gray-500 hover:text-green-600 flex items-center justify-center"
+                                  title="Record CTP"
+                                >
+                                  <FlagIcon className="h-3 w-3 mr-1" />
+                                  CTP
+                                </button>
+                              )}
+                            </div>
+                          )}
+                          
+                          {/* Skins Indicator */}
+                          <div>
+                            {hasSkinResult(hole.number) ? (
+                              <div className="text-xs text-amber-600 font-semibold flex items-center justify-center">
+                                <StarIcon className="h-3 w-3 mr-1" />
+                                <span title={`Skin: ${getSkinWinner(hole.number)?.name}`}>
+                                  Skin
+                                </span>
+                              </div>
+                            ) : (
+                              hole.homeGross !== null && hole.awayGross !== null && (
+                                <button
+                                  type="button"
+                                  onClick={() => openSkinsModal(hole)}
+                                  className="text-xs text-gray-500 hover:text-amber-600 flex items-center justify-center"
+                                  title="Record Skin"
+                                >
+                                  <StarIcon className="h-3 w-3 mr-1" />
+                                  Skin
+                                </button>
+                              )
+                            )}
+                          </div>
+                        </div>
+                      </td>
+                    ))}
+                    <td className="whitespace-nowrap px-3 py-2 text-center text-xs"></td>
+                  </tr>
                 </tbody>
               </table>
             </div>
@@ -743,21 +1071,21 @@ export default function ScorecardView() {
               <div className="mt-2 text-xs text-gray-600">
                 <p>Format: {match.format} (Multiplier: {match.formatMultiplier})</p>
                 <div className="flex mt-2">
-                  <div className="w-6 h-6 rounded-full bg-green-100 flex items-center justify-center mr-2">
-                    <span className="text-forest-green font-bold">H</span>
+                  <div className={`w-6 h-6 rounded-full flex items-center justify-center mr-2 ${data?.match?.homeTeamIsReal === true ? "bg-green-100" : "bg-blue-100"}`}>
+                    <span className={`font-bold ${data?.match?.homeTeamIsReal === true ? "text-forest-green" : "text-blue-700"}`}>H</span>
                   </div>
                   <div>
-                    <p className="font-semibold text-forest-green">{match.homeTeam}</p>
+                    <p className={`font-semibold ${data?.match?.homeTeamIsReal === true ? "text-forest-green" : "text-blue-700"}`}>{match.homeTeam}</p>
                     <p>Base Handicap {(match.homeTeamHandicap / match.formatMultiplier).toFixed(1)} × {match.formatMultiplier} = {match.homeTeamHandicap.toFixed(1)} strokes</p>
                   </div>
                 </div>
                 
                 <div className="flex mt-2">
-                  <div className="w-6 h-6 rounded-full bg-blue-100 flex items-center justify-center mr-2">
-                    <span className="text-blue-700 font-bold">A</span>
+                  <div className={`w-6 h-6 rounded-full flex items-center justify-center mr-2 ${data?.match?.awayTeamIsReal === true ? "bg-green-100" : "bg-blue-100"}`}>
+                    <span className={`font-bold ${data?.match?.awayTeamIsReal === true ? "text-forest-green" : "text-blue-700"}`}>A</span>
                   </div>
                   <div>
-                    <p className="font-semibold text-blue-700">{match.awayTeam}</p>
+                    <p className={`font-semibold ${data?.match?.awayTeamIsReal === true ? "text-forest-green" : "text-blue-700"}`}>{match.awayTeam}</p>
                     <p>Base Handicap {(match.awayTeamHandicap / match.formatMultiplier).toFixed(1)} × {match.formatMultiplier} = {match.awayTeamHandicap.toFixed(1)} strokes</p>
                   </div>
                 </div>
@@ -782,7 +1110,7 @@ export default function ScorecardView() {
             <h3 className="text-sm font-medium text-gray-900">Match Summary</h3>
             <div className="mt-2 grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
-                <h4 className="text-xs font-medium text-forest-green">{match.homeTeam}</h4>
+                <h4 className={`text-xs font-medium ${data?.match?.homeTeamIsReal === true ? "text-forest-green" : "text-blue-600"}`}>{match.homeTeam}</h4>
                 <p className="text-xs text-gray-600">Won {totalResults.home} holes</p>
               </div>
               <div>
@@ -790,7 +1118,7 @@ export default function ScorecardView() {
                 <p className="text-xs text-gray-600">{totalResults.ties} holes</p>
               </div>
               <div>
-                <h4 className="text-xs font-medium text-blue-800">{match.awayTeam}</h4>
+                <h4 className={`text-xs font-medium ${data?.match?.awayTeamIsReal === true ? "text-forest-green" : "text-blue-600"}`}>{match.awayTeam}</h4>
                 <p className="text-xs text-gray-600">Won {totalResults.away} holes</p>
               </div>
             </div>
@@ -892,6 +1220,176 @@ export default function ScorecardView() {
                   type="button"
                   className="mt-3 inline-flex w-full justify-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 sm:mt-0 sm:w-auto"
                   onClick={() => setShowPasswordModal(false)}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* CTP Modal */}
+      {showCtpModal && (
+        <div className="fixed inset-0 z-50 overflow-y-auto">
+          <div className="flex min-h-full items-end justify-center p-4 text-center sm:items-center sm:p-0">
+            <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" onClick={() => setShowCtpModal(false)}></div>
+            <div className="relative transform overflow-hidden rounded-lg bg-white px-4 pb-4 pt-5 text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-lg sm:p-6">
+              <div>
+                <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-green-100">
+                  <FlagIcon className="h-6 w-6 text-green-600" aria-hidden="true" />
+                </div>
+                <div className="mt-3 text-center sm:mt-5">
+                  <h3 className="text-base font-semibold leading-6 text-gray-900">
+                    Record Closest to Pin (CTP)
+                  </h3>
+                  <div className="mt-2">
+                    <p className="text-sm text-gray-500">
+                      {ctpModalData.holeName} - Par 3
+                    </p>
+                  </div>
+                  
+                  <div className="mt-4">
+                    <label htmlFor="player-select" className="block text-sm font-medium text-gray-700 text-left">
+                      Select Player
+                    </label>
+                    <select
+                      id="player-select"
+                      className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-green-500 focus:border-green-500 sm:text-sm rounded-md"
+                      value={ctpModalData.playerId}
+                      onChange={(e) => setCtpModalData({...ctpModalData, playerId: e.target.value})}
+                    >
+                      <option value="">-- Select Player --</option>
+                      {playersData?.homePlayers?.map((player: any) => (
+                        <option key={player.id} value={player.id}>
+                          {player.name} ({match.homeTeam})
+                        </option>
+                      ))}
+                      {playersData?.awayPlayers?.map((player: any) => (
+                        <option key={player.id} value={player.id}>
+                          {player.name} ({match.awayTeam})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  
+                  <div className="mt-4">
+                    <label htmlFor="distance" className="block text-sm font-medium text-gray-700 text-left">
+                      Distance (optional)
+                    </label>
+                    <div className="mt-1 flex rounded-md shadow-sm">
+                      <input
+                        type="text"
+                        name="distance"
+                        id="distance"
+                        className="block w-full flex-1 rounded-md border-gray-300 focus:border-green-500 focus:ring-green-500 sm:text-sm"
+                        placeholder="e.g. 2'3''"
+                        value={ctpModalData.distance}
+                        onChange={(e) => setCtpModalData({...ctpModalData, distance: e.target.value})}
+                      />
+                    </div>
+                    <p className="mt-1 text-sm text-gray-500 text-left">
+                      Enter the measured distance from the pin
+                    </p>
+                  </div>
+                </div>
+              </div>
+              <div className="mt-5 sm:mt-6 sm:grid sm:grid-flow-row-dense sm:grid-cols-2 sm:gap-3">
+                <button
+                  type="button"
+                  className="inline-flex w-full justify-center rounded-md bg-green-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-green-500 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 sm:col-start-2"
+                  onClick={handleSaveCtp}
+                >
+                  Save
+                </button>
+                <button
+                  type="button"
+                  className="mt-3 inline-flex w-full justify-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 sm:col-start-1 sm:mt-0"
+                  onClick={() => setShowCtpModal(false)}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Skins Modal */}
+      {showSkinsModal && (
+        <div className="fixed inset-0 z-50 overflow-y-auto">
+          <div className="flex min-h-full items-end justify-center p-4 text-center sm:items-center sm:p-0">
+            <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" onClick={() => setShowSkinsModal(false)}></div>
+            <div className="relative transform overflow-hidden rounded-lg bg-white px-4 pb-4 pt-5 text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-lg sm:p-6">
+              <div>
+                <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-amber-100">
+                  <StarIcon className="h-6 w-6 text-amber-600" aria-hidden="true" />
+                </div>
+                <div className="mt-3 text-center sm:mt-5">
+                  <h3 className="text-base font-semibold leading-6 text-gray-900">
+                    Record Skin Winner
+                  </h3>
+                  <div className="mt-2">
+                    <p className="text-sm text-gray-500">
+                      Hole #{skinsModalData.holeNumber} - Score: {skinsModalData.score}
+                    </p>
+                  </div>
+                  
+                  <div className="mt-4">
+                    <label htmlFor="skin-player-select" className="block text-sm font-medium text-gray-700 text-left">
+                      Select Player
+                    </label>
+                    <select
+                      id="skin-player-select"
+                      className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-amber-500 focus:border-amber-500 sm:text-sm rounded-md"
+                      value={skinsModalData.playerId}
+                      onChange={(e) => setSkinsModalData({...skinsModalData, playerId: e.target.value})}
+                    >
+                      <option value="">-- Select Player --</option>
+                      {playersData?.homePlayers?.map((player: any) => (
+                        <option key={player.id} value={player.id}>
+                          {player.name} ({match.homeTeam})
+                        </option>
+                      ))}
+                      {playersData?.awayPlayers?.map((player: any) => (
+                        <option key={player.id} value={player.id}>
+                          {player.name} ({match.awayTeam})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  
+                  <div className="mt-4">
+                    <label htmlFor="skin-score" className="block text-sm font-medium text-gray-700 text-left">
+                      Score
+                    </label>
+                    <div className="mt-1 flex rounded-md shadow-sm">
+                      <input
+                        type="number"
+                        name="skin-score"
+                        id="skin-score"
+                        className="block w-full flex-1 rounded-md border-gray-300 focus:border-amber-500 focus:ring-amber-500 sm:text-sm"
+                        min="1"
+                        max="10"
+                        value={skinsModalData.score}
+                        onChange={(e) => setSkinsModalData({...skinsModalData, score: parseInt(e.target.value)})}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div className="mt-5 sm:mt-6 sm:grid sm:grid-flow-row-dense sm:grid-cols-2 sm:gap-3">
+                <button
+                  type="button"
+                  className="inline-flex w-full justify-center rounded-md bg-amber-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 sm:col-start-2"
+                  onClick={handleSaveSkins}
+                >
+                  Save
+                </button>
+                <button
+                  type="button"
+                  className="mt-3 inline-flex w-full justify-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 sm:col-start-1 sm:mt-0"
+                  onClick={() => setShowSkinsModal(false)}
                 >
                   Cancel
                 </button>

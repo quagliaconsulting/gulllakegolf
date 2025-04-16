@@ -1,0 +1,4 @@
+-- New tables for CTP and Skins
+TRUNCATE TABLE "CTPResult" CASCADE;
+TRUNCATE TABLE "SkinsResult" CASCADE;
+TRUNCATE TABLE "PlayerPayment" CASCADE;

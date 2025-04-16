@@ -15,6 +15,8 @@ export interface FormatOption {
   id: string;
   formatName: string;
   multiplier: number;
+  points?: number;
+  halfPoints?: number;
   isFourManTeam?: boolean;
 }
 
@@ -25,6 +27,13 @@ export interface Tournament {
   location: string;
   startDate: Date | string;
   endDate: Date | string;
+  buyIn?: number;
+  totalPrize?: number;
+  hasCTP?: boolean;
+  ctpPrizeAmount?: number;
+  hasSkins?: boolean;
+  skinsPrizeAmount?: number;
+  payoutStructure?: Record<string, number>; // e.g., {"1": 50, "2": 30, "3": 20} for percentages
   createdAt?: Date | string;
   updatedAt?: Date | string;
   teams?: Team[];
@@ -35,18 +44,25 @@ export interface Tournament {
   formatMultipliers?: FormatMultiplier[];
   galleryPhotos?: GalleryPhoto[];
   reports?: Report[];
+  payments?: PlayerPayment[];
+  ctpResults?: CTPResult[];
+  skinsResults?: SkinsResult[];
 }
 
 export interface Team {
   id: string;
   name: string;
   tournamentId: string;
+  metadata?: string; // JSON string containing team metadata like isHomeTeam status
   tournament?: Tournament;
   players?: Player[];
   homeTeam?: Match[];
   awayTeam?: Match[];
   createdAt?: Date | string;
   updatedAt?: Date | string;
+  
+  // Virtual fields not in database but used in UI
+  isHomeTeam?: boolean; // Derived from metadata
 }
 
 export interface Player {
@@ -61,6 +77,9 @@ export interface Player {
   accommodationId?: string;
   accommodation?: Accommodation;
   playerPairings?: PlayerPairing[];
+  payments?: PlayerPayment[];
+  ctpWins?: CTPResult[];
+  skinsWins?: SkinsResult[];
   createdAt?: Date | string;
   updatedAt?: Date | string;
 }
@@ -82,9 +101,11 @@ export interface Hole {
   par: number;
   handicap: number;
   distance: number;
+  isPar3?: boolean;
   courseId: string;
   course?: Course;
   holeResults?: HoleResult[];
+  ctpResults?: CTPResult[];
   createdAt?: Date | string;
   updatedAt?: Date | string;
 }
@@ -156,6 +177,7 @@ export interface HoleResult {
   homeTeamNetScore?: number;
   awayTeamNetScore?: number;
   winnerTeamId?: string;
+  isSkin?: boolean;
   createdAt?: Date | string;
   updatedAt?: Date | string;
 }
@@ -223,4 +245,68 @@ export enum UserRole {
   TEAM_CAPTAIN = 'TEAM_CAPTAIN',
   PLAYER = 'PLAYER',
   SPECTATOR = 'SPECTATOR'
+}
+
+// Financial and Competition Tracking Models
+
+export enum PaymentType {
+  BUY_IN = 'BUY_IN',
+  CTP_ENTRY = 'CTP_ENTRY',
+  SKINS_ENTRY = 'SKINS_ENTRY',
+  PRIZE_PAYOUT = 'PRIZE_PAYOUT',
+  CTP_PAYOUT = 'CTP_PAYOUT',
+  SKINS_PAYOUT = 'SKINS_PAYOUT',
+  OTHER = 'OTHER'
+}
+
+export enum PaymentStatus {
+  PENDING = 'PENDING',
+  PAID = 'PAID',
+  RECEIVED = 'RECEIVED',
+  REFUNDED = 'REFUNDED'
+}
+
+export interface PlayerPayment {
+  id: string;
+  tournamentId: string;
+  tournament?: Tournament;
+  playerId: string;
+  player?: Player;
+  amount: number;
+  type: PaymentType;
+  status: PaymentStatus;
+  notes?: string;
+  createdAt?: Date | string;
+  updatedAt?: Date | string;
+}
+
+export interface CTPResult {
+  id: string;
+  tournamentId: string;
+  tournament?: Tournament;
+  holeId: string;
+  hole?: Hole;
+  playerId: string;
+  player?: Player;
+  distance?: number; // Distance in feet/inches from the hole
+  round: number;
+  prize?: number;
+  paid: boolean;
+  createdAt?: Date | string;
+  updatedAt?: Date | string;
+}
+
+export interface SkinsResult {
+  id: string;
+  tournamentId: string;
+  tournament?: Tournament;
+  playerId: string;
+  player?: Player;
+  matchId?: string;
+  holeNumber: number;
+  score: number;
+  prize?: number;
+  paid: boolean;
+  createdAt?: Date | string;
+  updatedAt?: Date | string;
 }

@@ -37,7 +37,12 @@ const navigation = [
     badge: 'Active', // Show a badge if there's an active tournament
   },
   { name: 'Players', href: '/players', icon: UsersIcon },
-  { name: 'Teams', href: '/teams', icon: UsersIcon },
+  { 
+    name: 'Teams', 
+    href: '/teams', 
+    icon: UsersIcon,
+    // Teams navigation doesn't need the enhanced flag - that's just for Tournaments
+  },
   { name: 'Courses', href: '/courses', icon: MapPinIcon },
   { name: 'Formats', href: '/formats', icon: ClipboardDocumentCheckIcon },
   { name: 'Schedule', href: '/schedule', icon: CalendarIcon },
@@ -61,14 +66,21 @@ function TournamentCountdownMini({ targetDate, status }: { targetDate: string, s
     // Calculate and format countdown
     const calculateCountdown = () => {
       const now = new Date();
+      // Create date with noon UTC time (to avoid timezone issues)
       const target = new Date(targetDate);
       target.setUTCHours(12, 0, 0, 0);
       
       // Calculate time difference
       const diff = target.getTime() - now.getTime();
       
-      if (diff <= 0) {
+      if (diff <= 0 && status === 'upcoming') {
         setCountdown('Today!');
+        return;
+      } else if (diff <= 0 && status === 'active') {
+        setCountdown('Ends today!');
+        return;
+      } else if (diff <= 0) {
+        setCountdown('Completed');
         return;
       }
       
@@ -76,11 +88,11 @@ function TournamentCountdownMini({ targetDate, status }: { targetDate: string, s
       const days = Math.floor(diff / (1000 * 60 * 60 * 24));
       
       if (days > 0) {
-        setCountdown(`${days}d`);
+        setCountdown(status === 'upcoming' ? `Starts in ${days}d` : `Ends in ${days}d`);
       } else {
         // Calculate hours
         const hours = Math.floor(diff / (1000 * 60 * 60));
-        setCountdown(`${hours}h`);
+        setCountdown(status === 'upcoming' ? `Starts in ${hours}h` : `Ends in ${hours}h`);
       }
     };
     
@@ -88,7 +100,7 @@ function TournamentCountdownMini({ targetDate, status }: { targetDate: string, s
     const interval = setInterval(calculateCountdown, 60000); // Update every minute
     
     return () => clearInterval(interval);
-  }, [targetDate]);
+  }, [targetDate, status]);
   
   return (
     <div className={`flex items-center text-xs font-medium rounded-full px-2 py-0.5 ${
@@ -325,6 +337,15 @@ export default function Sidebar({ sidebarOpen, setSidebarOpen }: SidebarProps) {
                                   status={featuredTournament.status} 
                                 />
                               </div>
+                              
+                              {/* Prize pool */}
+                              {featuredTournament.data.totalPrize && (
+                                <div className="mb-1 text-xs text-gray-700 flex items-center">
+                                  <TrophyIcon className="h-3 w-3 mr-1 text-yellow-500" />
+                                  Prize Pool: ${featuredTournament.data.totalPrize.toLocaleString()}
+                                </div>
+                              )}
+                              
                               <div className="flex space-x-1">
                                 {/* Team chips */}
                                 {featuredTournament.data.teams && Array.isArray(featuredTournament.data.teams) ? 
@@ -496,6 +517,15 @@ export default function Sidebar({ sidebarOpen, setSidebarOpen }: SidebarProps) {
                             status={featuredTournament.status} 
                           />
                         </div>
+                        
+                        {/* Prize pool */}
+                        {featuredTournament.data.totalPrize && (
+                          <div className="mb-1 text-xs text-gray-700 flex items-center">
+                            <TrophyIcon className="h-3 w-3 mr-1 text-yellow-500" />
+                            Prize Pool: ${featuredTournament.data.totalPrize.toLocaleString()}
+                          </div>
+                        )}
+                        
                         <div className="flex space-x-1">
                           {/* Team chips */}
                           {featuredTournament.data.teams && Array.isArray(featuredTournament.data.teams) ? 

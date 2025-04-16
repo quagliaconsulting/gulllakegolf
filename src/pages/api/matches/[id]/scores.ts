@@ -90,14 +90,64 @@ export default async function handler(
       });
       
       // Return formatted match with scores
+      // Add foursome group info if this is part of a foursome
+      let foursomeMatches = null;
+      
+      if (match.playerToPlayerMatch && match.foursomeGroupId) {
+        // Find other matches in the same foursome
+        const otherMatches = await prisma.match.findMany({
+          where: {
+            foursomeGroupId: match.foursomeGroupId,
+            id: { not: match.id }
+          },
+          include: {
+            playerPairings: {
+              include: {
+                player: true
+              }
+            },
+            points: true
+          }
+        });
+        
+        // Format the other matches for display
+        foursomeMatches = otherMatches.map(m => {
+          const homePlayers = m.playerPairings.filter(p => p.isHomeTeam).map(p => p.player);
+          const awayPlayers = m.playerPairings.filter(p => !p.isHomeTeam).map(p => p.player);
+          
+          // Determine match result
+          let result = null;
+          if (m.points) {
+            if (m.points.homeTeamPoints > m.points.awayTeamPoints) {
+              result = `${homePlayers[0]?.name || 'Home'} wins ${m.points.homeTeamPoints}-${m.points.awayTeamPoints}`;
+            } else if (m.points.awayTeamPoints > m.points.homeTeamPoints) {
+              result = `${awayPlayers[0]?.name || 'Away'} wins ${m.points.awayTeamPoints}-${m.points.homeTeamPoints}`;
+            } else if (m.points.homeTeamPoints === m.points.awayTeamPoints) {
+              result = 'Match tied';
+            }
+          }
+          
+          return {
+            id: m.id,
+            homePlayers,
+            awayPlayers,
+            result
+          };
+        });
+      }
+      
       const result = {
         id: match.id,
         format: match.format.formatName,
         formatMultiplier: match.format.multiplier,
         isFourManTeam: match.format.isFourManTeam || false,
+        playerToPlayerMatch: match.playerToPlayerMatch || false,
+        foursomeGroupId: match.foursomeGroupId || null,
         homeTeam: match.homeTeam?.name || 'Team 1',
+        homeTeamIsReal: match.homeTeam?.metadata?.isHomeTeam || false,
         awayTeam: match.awayTeam?.name || 'Team 2',
-        time: match.teeTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        awayTeamIsReal: match.awayTeam?.metadata?.isHomeTeam || false,
+        time: match.teeTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'UTC' }),
         course: match.course.name,
         startingHole: match.startingHole,
         homePlayers,
@@ -106,6 +156,7 @@ export default async function handler(
         homeTeamHandicap,
         awayTeamHandicap,
         points: match.points,
+        foursomeMatches
       };
       
       res.status(200).json({ match: result });

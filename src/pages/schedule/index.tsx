@@ -175,8 +175,12 @@ export default function SchedulePage() {
     if (!confirm('Are you sure you want to delete this scheduled event?')) return;
 
     try {
+      // Include auth token in headers
+      const token = localStorage.getItem('token');
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      
       // Call API to delete schedule
-      await axios.delete(`/api/schedules/${id}`);
+      await axios.delete(`/api/schedules/${id}`, { headers });
       
       // Update local data
       const updatedSchedules = scheduleData.schedules.filter((schedule: any) => schedule.id !== id);
@@ -245,7 +249,7 @@ export default function SchedulePage() {
               <p>Loading schedule...</p>
             </div>
           </div>
-        ) : showError && error ? (
+        ) : showError ? (
           <div className="mt-8 bg-white shadow-sm ring-1 ring-gray-900/5 sm:rounded-lg">
             <div className="p-8 text-center text-red-500">
               <p>Error loading schedule. Please try again.</p>

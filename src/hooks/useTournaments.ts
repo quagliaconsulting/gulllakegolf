@@ -39,8 +39,20 @@ export function useTournament(id: string) {
  */
 export async function createTournament(tournamentData: any) {
   try {
+    console.log('Creating tournament with data:', tournamentData);
     const response = await postData('/api/tournaments', tournamentData);
-    return response.tournament;
+    console.log('API response:', response);
+    
+    // Handle different response formats
+    if (response && response.tournament) {
+      return response.tournament;
+    } else if (response && response.id) {
+      // If the response is the tournament object itself
+      return response;
+    } else {
+      console.error('Unexpected response format:', response);
+      throw new Error('Invalid response format from server');
+    }
   } catch (error) {
     console.error('Error creating tournament:', error);
     throw error;

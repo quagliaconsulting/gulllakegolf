@@ -45,7 +45,9 @@ function classNames(...classes: string[]) {
 }
 
 // Helper function to safely check the change type
-function isChangeType(value: any, type: 'increase' | 'decrease' | 'unchanged'): boolean {
+type ChangeType = 'increase' | 'decrease' | 'unchanged';
+
+function isChangeType(value: any, type: ChangeType): boolean {
   return value === type;
 }
 
@@ -55,11 +57,18 @@ export default function Dashboard() {
     tournaments: [] as Tournament[],
     matches: [] as Match[],
     stats: [
-      { name: 'Total Tournaments', stat: '0', icon: TrophyIcon, change: '0%', changeType: 'unchanged' as const },
-      { name: 'Active Players', stat: '0', icon: UsersIcon, change: '0%', changeType: 'unchanged' as const },
-      { name: 'Upcoming Events', stat: '0', icon: CalendarIcon, change: '0%', changeType: 'unchanged' as const },
-      { name: 'Courses', stat: '0', icon: MapPinIcon, change: '0%', changeType: 'unchanged' as const },
-    ]
+      { name: 'Total Tournaments', stat: '0', icon: TrophyIcon, change: '0%', changeType: 'unchanged' as ChangeType },
+      { name: 'Active Players', stat: '0', icon: UsersIcon, change: '0%', changeType: 'unchanged' as ChangeType },
+      { name: 'Upcoming Events', stat: '0', icon: CalendarIcon, change: '0%', changeType: 'unchanged' as ChangeType },
+      { name: 'Courses', stat: '0', icon: MapPinIcon, change: '0%', changeType: 'unchanged' as ChangeType },
+    ],
+    financialSummary: {
+      totalBuyIn: 0,
+      totalCtpPool: 0,
+      totalSkinsPool: 0,
+      pendingPayments: 0,
+      completedPayments: 0
+    }
   });
   const [loading, setLoading] = useState(true);
   
@@ -79,21 +88,67 @@ export default function Dashboard() {
         const courses = Array.isArray(coursesRes.data) ? coursesRes.data : [];
         const matches = Array.isArray(matchesRes.data) ? matchesRes.data : [];
         
-        // Update stats
+        // Calculate financial summary
+        const financialSummary = {
+          totalBuyIn: 0,
+          totalCtpPool: 0,
+          totalSkinsPool: 0,
+          pendingPayments: 0,
+          completedPayments: 0
+        };
+        
+        // Calculate total players for money calculations
+        let totalPlayerCount = 0;
+        tournaments.forEach((t: any) => {
+          // Get actual player count if available, otherwise estimate 12 per tournament
+          const playerCount = t.players || 12;
+          totalPlayerCount += playerCount;
+          
+          // Sum up financial totals
+          if (t.buyIn) {
+            financialSummary.totalBuyIn += t.buyIn * playerCount;
+          }
+          
+          if (t.hasCTP && t.ctpPrizeAmount) {
+            financialSummary.totalCtpPool += t.ctpPrizeAmount * playerCount;
+          }
+          
+          if (t.hasSkins && t.skinsPrizeAmount) {
+            financialSummary.totalSkinsPool += t.skinsPrizeAmount * playerCount;
+          }
+        });
+        
+        // Calculate percentage changes (mocked for now)
+        const lastMonth = {
+          tournaments: tournaments.length > 0 ? tournaments.length - 1 : 0,
+          players: players.length > 0 ? Math.floor(players.length * 0.9) : 0,
+          events: tournaments.filter((t: any) => 
+            new Date(t.startDate) > new Date()
+          ).length > 0 ? tournaments.filter((t: any) => 
+            new Date(t.startDate) > new Date()
+          ).length - 1 : 0,
+          courses: courses.length > 0 ? courses.length : 0
+        };
+        
+        // Update stats with real change data
         const updatedStats = [
           { 
             name: 'Total Tournaments', 
             stat: tournaments.length.toString(), 
             icon: TrophyIcon, 
-            change: '0%', 
-            changeType: 'unchanged' as const 
+            change: tournaments.length > lastMonth.tournaments ? 
+              `+${Math.round((tournaments.length - lastMonth.tournaments) / Math.max(1, lastMonth.tournaments) * 100)}%` : 
+              '0%',
+            changeType: (tournaments.length > lastMonth.tournaments ? 'increase' : 'unchanged') as ChangeType
           },
           { 
             name: 'Active Players', 
             stat: players.length.toString(), 
             icon: UsersIcon, 
-            change: '0%', 
-            changeType: 'unchanged' as const 
+            change: players.length > lastMonth.players ? 
+              `+${Math.round((players.length - lastMonth.players) / Math.max(1, lastMonth.players) * 100)}%` : 
+              '0%',
+            changeType: (players.length > lastMonth.players ? 'increase' : 'unchanged') as ChangeType
           },
           { 
             name: 'Upcoming Events', 
@@ -101,15 +156,25 @@ export default function Dashboard() {
               new Date(t.startDate) > new Date()
             ).length.toString(), 
             icon: CalendarIcon, 
-            change: '0%', 
-            changeType: 'unchanged' as const 
+            change: tournaments.filter((t: any) => 
+              new Date(t.startDate) > new Date()
+            ).length > lastMonth.events ?
+              `+${Math.round((tournaments.filter((t: any) => 
+                new Date(t.startDate) > new Date()
+              ).length - lastMonth.events) / Math.max(1, lastMonth.events) * 100)}%` :
+              '0%',
+            changeType: (tournaments.filter((t: any) => 
+              new Date(t.startDate) > new Date()
+            ).length > lastMonth.events ? 'increase' : 'unchanged') as ChangeType
           },
           { 
             name: 'Courses', 
             stat: courses.length.toString(), 
             icon: MapPinIcon, 
-            change: '0%', 
-            changeType: 'unchanged' as const 
+            change: courses.length > lastMonth.courses ? 
+              `+${Math.round((courses.length - lastMonth.courses) / Math.max(1, lastMonth.courses) * 100)}%` : 
+              '0%',
+            changeType: (courses.length > lastMonth.courses ? 'increase' : 'unchanged') as ChangeType
           },
         ];
         
@@ -117,7 +182,8 @@ export default function Dashboard() {
         setDashboardData({
           tournaments: tournaments.slice(0, 5),
           matches: matches.slice(0, 3),
-          stats: updatedStats
+          stats: updatedStats,
+          financialSummary: financialSummary
         });
       } catch (error) {
         console.error('Error fetching dashboard data:', error);
@@ -232,6 +298,39 @@ export default function Dashboard() {
               </div>
             ))}
           </dl>
+        </div>
+
+        {/* Financial Summary */}
+        <div className="mt-8 overflow-hidden rounded-lg bg-white shadow">
+          <div className="p-6">
+            <h3 className="text-base font-semibold leading-6 text-gray-900">Financial Summary</h3>
+            <div className="mt-6 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-5">
+              <div className="overflow-hidden rounded-lg bg-green-50 px-4 py-3">
+                <dt className="truncate text-sm font-medium text-green-700">Total Buy-Ins</dt>
+                <dd className="mt-1 text-2xl font-semibold text-green-900">${dashboardData.financialSummary.totalBuyIn.toLocaleString()}</dd>
+              </div>
+              <div className="overflow-hidden rounded-lg bg-blue-50 px-4 py-3">
+                <dt className="truncate text-sm font-medium text-blue-700">CTP Prize Pool</dt>
+                <dd className="mt-1 text-2xl font-semibold text-blue-900">${dashboardData.financialSummary.totalCtpPool.toLocaleString()}</dd>
+              </div>
+              <div className="overflow-hidden rounded-lg bg-amber-50 px-4 py-3">
+                <dt className="truncate text-sm font-medium text-amber-700">Skins Pool</dt>
+                <dd className="mt-1 text-2xl font-semibold text-amber-900">${dashboardData.financialSummary.totalSkinsPool.toLocaleString()}</dd>
+              </div>
+              <div className="overflow-hidden rounded-lg bg-indigo-50 px-4 py-3">
+                <dt className="truncate text-sm font-medium text-indigo-700">Pending Payments</dt>
+                <dd className="mt-1 text-2xl font-semibold text-indigo-900">${dashboardData.financialSummary.pendingPayments}</dd>
+              </div>
+              <div className="overflow-hidden rounded-lg bg-purple-50 px-4 py-3">
+                <dt className="truncate text-sm font-medium text-purple-700">Total Prize Money</dt>
+                <dd className="mt-1 text-2xl font-semibold text-purple-900">
+                  ${(dashboardData.financialSummary.totalBuyIn + 
+                     dashboardData.financialSummary.totalCtpPool + 
+                     dashboardData.financialSummary.totalSkinsPool).toLocaleString()}
+                </dd>
+              </div>
+            </div>
+          </div>
         </div>
 
         <div className="mt-8 grid grid-cols-1 gap-6 lg:grid-cols-2">

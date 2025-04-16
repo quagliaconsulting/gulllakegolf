@@ -38,6 +38,45 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       });
       
       return res.status(200).json(courses);
+    } else if (req.method === 'POST') {
+      // Create a new course
+      const { name, tournamentId, holes } = req.body;
+
+      if (!name || !tournamentId) {
+        return res.status(400).json({ error: 'Name and tournament ID are required' });
+      }
+
+      try {
+        // Create course with optional holes
+        const course = await prisma.course.create({
+          data: {
+            name,
+            tournamentId,
+            ...(holes && Array.isArray(holes) && {
+              holes: {
+                createMany: {
+                  data: holes.map((hole: any) => ({
+                    number: hole.number,
+                    par: hole.par,
+                    handicap: hole.handicap,
+                    distance: hole.distance,
+                    isPar3: hole.par === 3
+                  }))
+                }
+              }
+            })
+          },
+          include: {
+            tournament: true,
+            holes: true
+          }
+        });
+        
+        return res.status(201).json(course);
+      } catch (error) {
+        console.error('Error creating course:', error);
+        return res.status(500).json({ error: 'Failed to create course' });
+      }
     }
     
     // For other methods, return 405 Method Not Allowed

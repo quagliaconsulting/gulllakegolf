@@ -4,7 +4,7 @@ import Head from 'next/head';
 import Link from 'next/link';
 import axios from 'axios';
 import useSWR from 'swr';
-import { ArrowLeftIcon, ArrowPathIcon, CheckCircleIcon } from '@heroicons/react/24/outline';
+import { ArrowLeftIcon, ArrowPathIcon, CheckCircleIcon, UserGroupIcon, ArrowsRightLeftIcon, XMarkIcon } from '@heroicons/react/24/outline';
 
 // Fetch function for SWR
 const fetcher = (url: string) => axios.get(url).then(res => res.data);
@@ -17,6 +17,8 @@ export default function AssignPlayers() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [playerMatchups, setPlayerMatchups] = useState<{homeId: string, awayId: string}[]>([]);
+  const [singlesMode, setSinglesMode] = useState<'standard' | 'foursome'>('standard');
 
   // Fetch match data
   const { data, error: fetchError, isLoading, mutate } = useSWR(
@@ -32,6 +34,13 @@ export default function AssignPlayers() {
     if (data) {
       setSelectedHomePlayers(data.homePlayers.map((p: any) => p.id));
       setSelectedAwayPlayers(data.awayPlayers.map((p: any) => p.id));
+      
+      // Detect if this is a singles foursome container match
+      if (data.isSingles && data.foursomeGroupId && !data.playerToPlayerMatch) {
+        setSinglesMode('foursome');
+      } else {
+        setSinglesMode('standard');
+      }
     }
   }, [data]);
 
@@ -39,9 +48,22 @@ export default function AssignPlayers() {
   const toggleHomePlayer = (playerId: string) => {
     setSelectedHomePlayers(prev => {
       if (prev.includes(playerId)) {
-        return prev.filter(id => id !== playerId);
+        // Remove player
+        const newSelection = prev.filter(id => id !== playerId);
+        
+        // Also remove any matchups involving this player
+        setPlayerMatchups(matchups => 
+          matchups.filter(m => m.homeId !== playerId)
+        );
+        
+        return newSelection;
       } else {
-        return [...prev, playerId];
+        // Add player (max 1 for standard singles, max 4 for foursome)
+        const maxPlayers = singlesMode === 'foursome' ? 4 : 1;
+        if (prev.length < maxPlayers) {
+          return [...prev, playerId];
+        }
+        return prev;
       }
     });
   };
@@ -49,11 +71,59 @@ export default function AssignPlayers() {
   const toggleAwayPlayer = (playerId: string) => {
     setSelectedAwayPlayers(prev => {
       if (prev.includes(playerId)) {
-        return prev.filter(id => id !== playerId);
+        // Remove player
+        const newSelection = prev.filter(id => id !== playerId);
+        
+        // Also remove any matchups involving this player
+        setPlayerMatchups(matchups => 
+          matchups.filter(m => m.awayId !== playerId)
+        );
+        
+        return newSelection;
       } else {
-        return [...prev, playerId];
+        // Add player (max 1 for standard singles, max 4 for foursome)
+        const maxPlayers = singlesMode === 'foursome' ? 4 : 1;
+        if (prev.length < maxPlayers) {
+          return [...prev, playerId];
+        }
+        return prev;
       }
     });
+  };
+  
+  // Add a player matchup
+  const addMatchup = (homeId: string, awayId: string) => {
+    setPlayerMatchups(prev => {
+      // Remove any existing matchups involving these players
+      const filtered = prev.filter(
+        m => m.homeId !== homeId && m.awayId !== awayId
+      );
+      
+      // Add the new matchup
+      return [...filtered, { homeId, awayId }];
+    });
+  };
+  
+  // Remove a player matchup
+  const removeMatchup = (homeId: string, awayId: string) => {
+    setPlayerMatchups(prev => 
+      prev.filter(m => !(m.homeId === homeId && m.awayId === awayId))
+    );
+  };
+  
+  // Auto-create matchups based on player order
+  const autoCreateMatchups = () => {
+    if (selectedHomePlayers.length !== 4 || selectedAwayPlayers.length !== 4) {
+      setError('Please select exactly 4 players from each team first');
+      return;
+    }
+    
+    const newMatchups = selectedHomePlayers.map((homeId, index) => ({
+      homeId,
+      awayId: selectedAwayPlayers[index]
+    }));
+    
+    setPlayerMatchups(newMatchups);
   };
 
   // Handle form submission
@@ -62,7 +132,81 @@ export default function AssignPlayers() {
     
     if (!data) return;
     
-    // Validate based on match format
+    // Special handling for Singles foursome mode
+    if (singlesMode === 'foursome') {
+      // For foursome, we need exactly 4 players per team
+      if (selectedHomePlayers.length !== 4 || selectedAwayPlayers.length !== 4) {
+        setError('Singles foursome requires exactly 4 players per team');
+        return;
+      }
+      
+      // We also need exactly 4 matchups
+      if (playerMatchups.length !== 4) {
+        setError('Please create all 4 player matchups before saving');
+        return;
+      }
+      
+      // Ensure all players are included in matchups
+      const homeIdsInMatchups = playerMatchups.map(m => m.homeId);
+      const awayIdsInMatchups = playerMatchups.map(m => m.awayId);
+      
+      const allHomePlayersMatched = selectedHomePlayers.every(id => homeIdsInMatchups.includes(id));
+      const allAwayPlayersMatched = selectedAwayPlayers.every(id => awayIdsInMatchups.includes(id));
+      
+      if (!allHomePlayersMatched || !allAwayPlayersMatched) {
+        setError('All selected players must be part of a matchup');
+        return;
+      }
+      
+      // All validations pass, now save the foursome
+      setError(null);
+      setSaving(true);
+      
+      try {
+        // Create the individual player-player matches using the shared foursomeGroupId
+        const promises = playerMatchups.map(matchup => {
+          return axios.post('/api/matches', {
+            tournamentId: data.tournamentId,
+            scheduleId: data.scheduleId,
+            formatId: data.formatId,
+            homeTeamId: data.homeTeamId,
+            awayTeamId: data.awayTeamId,
+            courseId: data.courseId,
+            startingHole: data.startingHole || 1,
+            teeTime: data.teeTime,
+            foursomeGroupId: data.foursomeGroupId,
+            playerToPlayerMatch: true,
+            playerPairings: [
+              {
+                playerId: matchup.homeId,
+                isHomeTeam: true
+              },
+              {
+                playerId: matchup.awayId,
+                isHomeTeam: false
+              }
+            ]
+          });
+        });
+        
+        await Promise.all(promises);
+        
+        setSaved(true);
+        
+        // Navigate back to tournament page
+        setTimeout(() => {
+          router.push(`/tournaments/${id}`);
+        }, 1500);
+      } catch (err) {
+        console.error('Error creating player matches:', err);
+        setError('Failed to create player matches. Please try again.');
+        setSaving(false);
+      }
+      
+      return;
+    }
+    
+    // Regular validation for non-foursome formats
     if (data.isPairsFormat) {
       // For pairs formats, we need exactly 2 players per team
       if (selectedHomePlayers.length !== 2 || selectedAwayPlayers.length !== 2) {
@@ -75,10 +219,34 @@ export default function AssignPlayers() {
         setError('4-Man Team format requires exactly 4 players per team');
         return;
       }
-    } else if (data.isSingles) {
-      // For singles, we need exactly 1 player per team
+    } else if (data.isSingles && data.playerToPlayerMatch) {
+      // For singles player-to-player matches, we need exactly 1 player per team
       if (selectedHomePlayers.length !== 1 || selectedAwayPlayers.length !== 1) {
-        setError('Singles format requires exactly 1 player per team');
+        setError('Singles player-to-player matches require exactly 1 player from each team');
+        return;
+      }
+    } else if (data.isSingles && !data.playerToPlayerMatch) {
+      // For singles container matches, we need exactly 2 players per team for foursome setup
+      if (selectedHomePlayers.length !== 2 || selectedAwayPlayers.length !== 2) {
+        setError('Singles container matches require exactly 2 players from each team for foursome setup');
+        return;
+      }
+      
+      // Also validate player matchups for singles
+      if (playerMatchups.length !== 2) {
+        setError('Please create matchups for all players in Singles format');
+        return;
+      }
+      
+      // Make sure all players are included in matchups
+      const homeIdsInMatchups = playerMatchups.map(m => m.homeId);
+      const awayIdsInMatchups = playerMatchups.map(m => m.awayId);
+      
+      const allHomePlayersMatched = selectedHomePlayers.every(id => homeIdsInMatchups.includes(id));
+      const allAwayPlayersMatched = selectedAwayPlayers.every(id => awayIdsInMatchups.includes(id));
+      
+      if (!allHomePlayersMatched || !allAwayPlayersMatched) {
+        setError('All selected players must be part of a matchup');
         return;
       }
     }
@@ -93,13 +261,47 @@ export default function AssignPlayers() {
         awayPlayers: selectedAwayPlayers
       });
       
+      // For singles matches, also save the player pairings
+      if (data.isSingles && !data.playerToPlayerMatch && playerMatchups.length === 2) {
+        // Create player-to-player matches for the singles format
+        const foursomeGroupId = `foursome_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+        
+        // Create individual match requests for each player pairing
+        const matchRequests = playerMatchups.map(matchup => {
+          return axios.post('/api/matches', {
+            tournamentId: data.tournamentId,
+            scheduleId: data.scheduleId,
+            formatId: data.formatId,
+            homeTeamId: data.homeTeamId,
+            awayTeamId: data.awayTeamId,
+            courseId: data.courseId,
+            startingHole: data.startingHole || 1,
+            teeTime: data.teeTime,
+            foursomeGroupId: foursomeGroupId,
+            playerToPlayerMatch: true,
+            playerPairings: [
+              {
+                playerId: matchup.homeId,
+                isHomeTeam: true
+              },
+              {
+                playerId: matchup.awayId,
+                isHomeTeam: false
+              }
+            ]
+          });
+        });
+        
+        await Promise.all(matchRequests);
+      }
+      
       setSaved(true);
       mutate(); // Refresh data
       
-      // Reset after 3 seconds
+      // Redirect back to tournament page after successful save
       setTimeout(() => {
-        setSaved(false);
-      }, 3000);
+        router.push(`/tournaments/${id}`);
+      }, 1500);
     } catch (err) {
       console.error('Error assigning players:', err);
       setError('Failed to assign players. Please try again.');
@@ -113,8 +315,41 @@ export default function AssignPlayers() {
     if (!data) return 0;
     if (data.isPairsFormat) return 2;
     if (data.isFourManTeam) return 4;
-    if (data.isSingles) return 1;
+    if (data.isSingles) {
+      return singlesMode === 'foursome' ? 4 : 1;
+    }
     return 0;
+  };
+  
+  // Helper functions for foursome matchups
+  const isHomePlayerMatched = (playerId: string) => {
+    return playerMatchups.some(m => m.homeId === playerId);
+  };
+  
+  const isAwayPlayerMatched = (playerId: string) => {
+    return playerMatchups.some(m => m.awayId === playerId);
+  };
+  
+  // Get opponent for a player
+  const getOpponentId = (playerId: string, team: 'home' | 'away') => {
+    if (team === 'home') {
+      const matchup = playerMatchups.find(m => m.homeId === playerId);
+      return matchup?.awayId;
+    } else {
+      const matchup = playerMatchups.find(m => m.awayId === playerId);
+      return matchup?.homeId;
+    }
+  };
+  
+  // Get player name by ID
+  const getPlayerNameById = (playerId: string) => {
+    const homePlayer = data?.allHomePlayers?.find((p: any) => p.id === playerId);
+    if (homePlayer) return homePlayer.name;
+    
+    const awayPlayer = data?.allAwayPlayers?.find((p: any) => p.id === playerId);
+    if (awayPlayer) return awayPlayer.name;
+    
+    return 'Unknown player';
   };
 
   if (isLoading) {
@@ -143,15 +378,31 @@ export default function AssignPlayers() {
         </div>
 
         <div className="mb-6">
-          <h1 className="text-2xl font-bold text-gray-900">Assign Players</h1>
+          <h1 className="text-2xl font-bold text-gray-900">
+            {singlesMode === 'foursome' ? 'Create Singles Foursome' : 'Assign Players'}
+          </h1>
           <p className="mt-2 text-sm text-gray-700">
             {data.format} - {data.homeTeam} vs {data.awayTeam}
           </p>
           <p className="mt-1 text-sm font-medium text-blue-600">
             {data.isPairsFormat && "Select exactly 2 players per team"}
             {data.isFourManTeam && "Select exactly 4 players per team"}
-            {data.isSingles && "Select exactly 1 player per team"}
+            {data.isSingles && singlesMode === 'standard' && "Select exactly 1 player per team"}
+            {data.isSingles && singlesMode === 'foursome' && "Select 4 players from each team and create individual matchups"}
           </p>
+          
+          {singlesMode === 'foursome' && (
+            <div className="mt-3 bg-blue-50 p-3 rounded-md">
+              <div className="flex items-center text-blue-700">
+                <UserGroupIcon className="h-5 w-5 mr-2" />
+                <span className="font-medium">Singles Foursome Mode</span>
+              </div>
+              <p className="text-sm text-blue-600 mt-1">
+                In this mode, you'll create 4 individual player-vs-player matches that will play together as a foursome.
+                First select 4 players from each team, then specify which home player will compete against which away player.
+              </p>
+            </div>
+          )}
         </div>
 
         {error && (
@@ -198,8 +449,16 @@ export default function AssignPlayers() {
                         </label>
                       </div>
                       {selectedHomePlayers.includes(player.id) && (
-                        <div className="text-primary">
-                          <CheckCircleIcon className="h-5 w-5" />
+                        <div className="flex items-center">
+                          {/* For foursome mode, show matchup info */}
+                          {singlesMode === 'foursome' && isHomePlayerMatched(player.id) && (
+                            <div className="text-sm text-gray-600 mr-2">
+                              vs. {getPlayerNameById(getOpponentId(player.id, 'home') || '')}
+                            </div>
+                          )}
+                          <div className="text-primary">
+                            <CheckCircleIcon className="h-5 w-5" />
+                          </div>
                         </div>
                       )}
                     </div>
@@ -240,8 +499,16 @@ export default function AssignPlayers() {
                         </label>
                       </div>
                       {selectedAwayPlayers.includes(player.id) && (
-                        <div className="text-primary">
-                          <CheckCircleIcon className="h-5 w-5" />
+                        <div className="flex items-center">
+                          {/* For foursome mode, show matchup info */}
+                          {singlesMode === 'foursome' && isAwayPlayerMatched(player.id) && (
+                            <div className="text-sm text-gray-600 mr-2">
+                              vs. {getPlayerNameById(getOpponentId(player.id, 'away') || '')}
+                            </div>
+                          )}
+                          <div className="text-primary">
+                            <CheckCircleIcon className="h-5 w-5" />
+                          </div>
                         </div>
                       )}
                     </div>
@@ -255,6 +522,237 @@ export default function AssignPlayers() {
               </ul>
             </div>
           </div>
+          
+          {/* Singles Matchup Section for standard singles matches */}
+          {data.isSingles && !data.playerToPlayerMatch && (
+            <div className="mt-8 bg-white shadow-sm ring-1 ring-gray-900/5 sm:rounded-xl overflow-hidden">
+              <div className="px-4 py-5 bg-gray-50 sm:px-6">
+                <h2 className="text-lg font-medium leading-6 text-gray-900">Singles Player Matchups</h2>
+                <p className="mt-1 max-w-2xl text-sm text-gray-500">
+                  Specify which home player will play against which away player (1 point per matchup)
+                </p>
+              </div>
+              
+              <div className="p-4">
+                {selectedHomePlayers.length === 2 && selectedAwayPlayers.length === 2 ? (
+                  <div className="space-y-4">
+                    <div className="flex justify-end space-x-2">
+                      <button
+                        type="button"
+                        onClick={autoCreateMatchups}
+                        className="inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+                      >
+                        <ArrowsRightLeftIcon className="h-4 w-4 mr-1" />
+                        Auto-Match Players
+                      </button>
+                    </div>
+                    
+                    {/* Existing matchups */}
+                    {playerMatchups.map((matchup, index) => (
+                      <div key={index} className="flex items-center space-x-3">
+                        <div className="flex-1 bg-blue-50 p-2 rounded">
+                          <span className="font-medium">{getPlayerNameById(matchup.homeId)}</span>
+                        </div>
+                        <span>vs</span>
+                        <div className="flex-1 bg-red-50 p-2 rounded">
+                          <span className="font-medium">{getPlayerNameById(matchup.awayId)}</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => removeMatchup(matchup.homeId, matchup.awayId)}
+                          className="p-1 text-red-600 hover:text-red-800"
+                        >
+                          <XMarkIcon className="h-5 w-5" />
+                        </button>
+                      </div>
+                    ))}
+                    
+                    {/* Create new matchups */}
+                    {playerMatchups.length < 2 && (
+                      <div>
+                        <h3 className="text-sm font-medium text-gray-700 mb-2">Create New Matchup</h3>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Home Player</label>
+                            <select 
+                              id="home-player-select"
+                              className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                              onChange={(e) => {
+                                const selectedHomeId = e.target.value;
+                                const select = document.getElementById('away-player-select') as HTMLSelectElement;
+                                if (select?.value) {
+                                  addMatchup(selectedHomeId, select.value);
+                                  // Reset both selects
+                                  e.target.value = '';
+                                  select.value = '';
+                                }
+                              }}
+                            >
+                              <option value="">Select Home Player</option>
+                              {selectedHomePlayers
+                                .filter(id => !isHomePlayerMatched(id))
+                                .map(id => (
+                                  <option key={id} value={id}>
+                                    {getPlayerNameById(id)}
+                                  </option>
+                                ))
+                              }
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Away Player</label>
+                            <select 
+                              id="away-player-select"
+                              className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                              onChange={(e) => {
+                                const selectedAwayId = e.target.value;
+                                const select = document.getElementById('home-player-select') as HTMLSelectElement;
+                                if (select?.value) {
+                                  addMatchup(select.value, selectedAwayId);
+                                  // Reset both selects
+                                  e.target.value = '';
+                                  select.value = '';
+                                }
+                              }}
+                            >
+                              <option value="">Select Away Player</option>
+                              {selectedAwayPlayers
+                                .filter(id => !isAwayPlayerMatched(id))
+                                .map(id => (
+                                  <option key={id} value={id}>
+                                    {getPlayerNameById(id)}
+                                  </option>
+                                ))
+                              }
+                            </select>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="bg-yellow-50 p-4 rounded-md">
+                    <p className="text-yellow-700">Please select exactly 2 players from each team first.</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+          
+          {/* Singles Foursome Matchup Section */}
+          {singlesMode === 'foursome' && (
+            <div className="mt-8 bg-white shadow-sm ring-1 ring-gray-900/5 sm:rounded-xl overflow-hidden">
+              <div className="px-4 py-5 bg-gray-50 sm:px-6">
+                <h2 className="text-lg font-medium leading-6 text-gray-900">Player Matchups</h2>
+                <p className="mt-1 max-w-2xl text-sm text-gray-500">
+                  Specify which home player will play against which away player
+                </p>
+              </div>
+              
+              <div className="p-4">
+                {selectedHomePlayers.length === 2 && selectedAwayPlayers.length === 2 ? (
+                  <div className="space-y-4">
+                    <div className="flex justify-end">
+                      <button
+                        type="button"
+                        onClick={autoCreateMatchups}
+                        className="inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+                      >
+                        Auto-Match Players
+                      </button>
+                    </div>
+                    
+                    {/* Existing matchups */}
+                    {playerMatchups.map((matchup, index) => (
+                      <div key={index} className="flex items-center space-x-3">
+                        <div className="flex-1 bg-blue-50 p-2 rounded">
+                          <span className="font-medium">{getPlayerNameById(matchup.homeId)}</span>
+                        </div>
+                        <span>vs</span>
+                        <div className="flex-1 bg-red-50 p-2 rounded">
+                          <span className="font-medium">{getPlayerNameById(matchup.awayId)}</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => removeMatchup(matchup.homeId, matchup.awayId)}
+                          className="p-1 text-red-600 hover:text-red-800"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    ))}
+                    
+                    {/* Create new matchups */}
+                    {playerMatchups.length < 2 && (
+                      <div>
+                        <h3 className="text-sm font-medium text-gray-700 mb-2">Create New Matchup</h3>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Home Player</label>
+                            <select 
+                              id="home-player-select"
+                              className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                              onChange={(e) => {
+                                const selectedHomeId = e.target.value;
+                                const select = document.getElementById('away-player-select') as HTMLSelectElement;
+                                if (select?.value) {
+                                  addMatchup(selectedHomeId, select.value);
+                                  // Reset both selects
+                                  e.target.value = '';
+                                  select.value = '';
+                                }
+                              }}
+                            >
+                              <option value="">Select Home Player</option>
+                              {selectedHomePlayers
+                                .filter(id => !isHomePlayerMatched(id))
+                                .map(id => (
+                                  <option key={id} value={id}>
+                                    {getPlayerNameById(id)}
+                                  </option>
+                                ))
+                              }
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Away Player</label>
+                            <select 
+                              id="away-player-select"
+                              className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                              onChange={(e) => {
+                                const selectedAwayId = e.target.value;
+                                const select = document.getElementById('home-player-select') as HTMLSelectElement;
+                                if (select?.value) {
+                                  addMatchup(select.value, selectedAwayId);
+                                  // Reset both selects
+                                  e.target.value = '';
+                                  select.value = '';
+                                }
+                              }}
+                            >
+                              <option value="">Select Away Player</option>
+                              {selectedAwayPlayers
+                                .filter(id => !isAwayPlayerMatched(id))
+                                .map(id => (
+                                  <option key={id} value={id}>
+                                    {getPlayerNameById(id)}
+                                  </option>
+                                ))
+                              }
+                            </select>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="bg-yellow-50 p-4 rounded-md">
+                    <p className="text-yellow-700">Please select exactly 2 players from each team first.</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           <div className="mt-6 flex items-center justify-end space-x-4">
             <Link
@@ -277,13 +775,13 @@ export default function AssignPlayers() {
                   Saving...
                 </>
               ) : (
-                'Assign Players'
+                singlesMode === 'foursome' ? 'Create Matches' : 'Assign Players'
               )}
             </button>
             
             {saved && (
               <span className="text-sm font-medium text-green-600">
-                Players assigned successfully!
+                {singlesMode === 'foursome' ? 'Matches created successfully!' : 'Players assigned successfully!'}
               </span>
             )}
           </div>

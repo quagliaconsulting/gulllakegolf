@@ -80,13 +80,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             const homeTeamName = match.homeTeam?.name || 'Team 1';
             const awayTeamName = match.awayTeam?.name || 'Team 2';
             
-            // Extract just the time portion with fixed timezone
+            // Extract just the time portion with UTC timezone to avoid shifts
             const teeTime = new Date(match.teeTime);
-            // Use local time but with a fixed format to avoid timezone issues
+            // Use time with a fixed format in UTC timezone
             const timeString = teeTime.toLocaleTimeString([], { 
               hour: '2-digit', 
               minute: '2-digit',
-              hour12: false
+              hour12: true,
+              timeZone: 'UTC'
             });
             
             return {

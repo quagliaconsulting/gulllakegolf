@@ -194,13 +194,15 @@ export default function CoursesPage() {
                             {course.holes?.length || '18'}
                           </td>
                           <td className="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
-                            <button
-                              onClick={() => window.location.href = `/courses/${course.id}/edit`}
-                              className="text-primary hover:text-primary/80 mr-4"
+                            <Link
+                              href={`/courses/${course.id}/edit`}
+                              passHref
+                              legacyBehavior={false}
+                              className="text-primary hover:text-primary/80 mr-4 inline-block"
                             >
                               <PencilIcon className="h-5 w-5" />
                               <span className="sr-only">Edit</span>
-                            </button>
+                            </Link>
                             <button
                               onClick={() => handleDeleteCourse(course.id)}
                               className="text-red-600 hover:text-red-800"

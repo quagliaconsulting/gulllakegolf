@@ -1,0 +1,5 @@
+-- Schedule table
+TRUNCATE TABLE "Schedule" CASCADE;
+INSERT INTO "Schedule" (id, "tournamentId", day, date, "createdAt", "updatedAt")
+VALUES
+  ('872d8f71-8507-4b7d-a289-76469356a5cf', '6b5eaadf-9d01-4f1a-b3ba-da96688aafc2', 1, '2025-04-25 00:00:00', '2025-04-15 04:22:02.494000', '2025-04-15 04:22:02.494000');

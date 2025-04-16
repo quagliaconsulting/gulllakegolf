@@ -1,35 +1,64 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
 import Link from 'next/link';
 import axios from 'axios';
-import { ArrowLeftIcon, PlusIcon, XMarkIcon, CalendarIcon, ClockIcon } from '@heroicons/react/24/outline';
-import { SelectOption, TeamOption, FormatOption } from '../../../types/models';
+import { ArrowLeftIcon, CheckIcon, PlusIcon, TrashIcon } from '@heroicons/react/24/outline';
+import { SelectOption, FormatOption } from '@/types/models';
 
-export default function NewSchedule() {
+export default function ScheduleBuilder() {
   const router = useRouter();
   const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  // Data sources
   const [tournaments, setTournaments] = useState<SelectOption[]>([]);
   const [courses, setCourses] = useState<SelectOption[]>([]);
   const [formats, setFormats] = useState<FormatOption[]>([]);
+  
+  // Selected tournament data
   const [selectedTournament, setSelectedTournament] = useState<any>(null);
-  const [formData, setFormData] = useState({
-    tournamentId: '',
-    day: 1,
-    date: new Date().toISOString().split('T')[0],
-    teeTimes: [
-      {
-        id: `teetime-${Date.now()}`,
-        time: '08:00',
-        format: '',
-        courseId: '',
-        startingHole: 1,
-        holes: 9
-      }
-    ]
+  const [selectedTournamentId, setSelectedTournamentId] = useState<string>('');
+  
+  // Schedule configuration
+  const [scheduleConfig, setScheduleConfig] = useState<{
+    days: number;
+    startDate: string;
+    currentDay: number;
+  }>({
+    days: 3,  // Default to 3 days
+    startDate: '',
+    currentDay: 1
   });
-  const [errors, setErrors] = useState<Record<string, string>>({});
-
+  
+  // Grid-based tee time slots across the entire tournament
+  // Format: { day: number, time: string, slots: Array<slot data> }
+  const [teeTimeGrid, setTeeTimeGrid] = useState<any[]>([]);
+  
+  // Template patterns
+  const [savedTemplates, setSavedTemplates] = useState<any[]>([
+    {
+      name: "2-Team Standard",
+      pattern: [
+        { format: "Singles", holes: 9, startingHole: 1 },
+        { format: "Best Ball", holes: 9, startingHole: 10 }
+      ]
+    },
+    {
+      name: "Mixed Format Day",
+      pattern: [
+        { format: "Alternate Shot", holes: 9, startingHole: 1 },
+        { format: "Chapman", holes: 9, startingHole: 10 }
+      ]
+    }
+  ]);
+  
+  // Time slot generation settings
+  const [timeSettings, setTimeSettings] = useState({
+    startTime: '08:00',
+    endTime: '14:00',
+    interval: 10 // minutes
+  });
+  
   // Fetch data for dropdowns
   useEffect(() => {
     const fetchData = async () => {
@@ -40,232 +69,279 @@ export default function NewSchedule() {
           }
         };
         
-        // Fetch tournaments from API
-        const tournamentsResponse = await axios.get('/api/tournaments', authHeaders);
-        if (Array.isArray(tournamentsResponse.data)) {
-          setTournaments(tournamentsResponse.data);
-        }
+        const [tournamentsRes, coursesRes, formatsRes] = await Promise.all([
+          axios.get('/api/tournaments', authHeaders),
+          axios.get('/api/courses', authHeaders),
+          axios.get('/api/formats', authHeaders)
+        ]);
         
-        // Fetch courses from API
-        const coursesResponse = await axios.get('/api/courses', authHeaders);
-        if (Array.isArray(coursesResponse.data)) {
-          setCourses(coursesResponse.data);
-        }
-        
-        // Get formats from the API
-        const formatsResponse = await axios.get('/api/formats', authHeaders);
-        if (Array.isArray(formatsResponse.data)) {
-          setFormats(formatsResponse.data);
-        }
+        setTournaments(Array.isArray(tournamentsRes.data) ? tournamentsRes.data : []);
+        setCourses(Array.isArray(coursesRes.data) ? coursesRes.data : []);
+        setFormats(Array.isArray(formatsRes.data) ? formatsRes.data : []);
       } catch (error) {
         console.error('Error fetching data:', error);
-        
-        // No fallback data - use empty arrays
-        setTournaments([]);
-        setCourses([]);
-        setFormats([]);
       }
     };
 
     fetchData();
   }, []);
-
-  // Update date when tournament or day changes
+  
+  // Handle tournament selection
   useEffect(() => {
-    if (selectedTournament && selectedTournament.startDate && formData.day) {
-      // Calculate date based on start date and day number
-      const startDate = new Date(selectedTournament.startDate);
-      const dayOffset = formData.day - 1; // Day 1 = start date, Day 2 = start date + 1, etc.
-      const calculatedDate = new Date(startDate);
-      calculatedDate.setDate(startDate.getDate() + dayOffset);
+    const loadTournamentDetails = async () => {
+      if (!selectedTournamentId) {
+        setSelectedTournament(null);
+        return;
+      }
       
-      setFormData(prev => ({
-        ...prev,
-        date: calculatedDate.toISOString().split('T')[0]
-      }));
-    }
-  }, [selectedTournament, formData.day]);
-
-  // Handle tournament change
-  const handleTournamentChange = async (tournamentId: string) => {
-    setFormData(prev => ({
-      ...prev,
-      tournamentId,
-      teeTimes: [
-        {
-          id: `teetime-${Date.now()}`,
-          time: '08:00',
-          format: '',
-          courseId: '',
-          startingHole: 1,
-          holes: 9
-        }
-      ]
-    }));
-    
-    // Clear error
-    if (errors.tournamentId) {
-      setErrors(prev => {
-        const newErrors = { ...prev };
-        delete newErrors.tournamentId;
-        return newErrors;
-      });
-    }
-    
-    // Fetch tournament details to get start date
-    if (tournamentId) {
       try {
-        const response = await axios.get(`/api/tournaments/${tournamentId}`);
-        if (response.data && response.data.tournament) {
-          setSelectedTournament(response.data.tournament);
+        const authHeaders = {
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
+          }
+        };
+        
+        const response = await axios.get(`/api/tournaments/${selectedTournamentId}`, authHeaders);
+        if (response.data?.tournament) {
+          const tournament = response.data.tournament;
+          setSelectedTournament(tournament);
+          
+          // Set tournament start date
+          if (tournament.startDate) {
+            const startDate = new Date(tournament.startDate);
+            // Use date without time component in ISO format (YYYY-MM-DD)
+            setScheduleConfig(prev => ({
+              ...prev,
+              startDate: startDate.toISOString().split('T')[0]
+            }));
+            
+            // Determine number of days from tournament duration
+            if (tournament.endDate) {
+              const endDate = new Date(tournament.endDate);
+              const diffTime = Math.abs(endDate.getTime() - startDate.getTime());
+              const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1; // +1 to include end day
+              
+              setScheduleConfig(prev => ({
+                ...prev,
+                days: diffDays
+              }));
+            }
+            
+            // Initialize tee time grid based on tournament duration
+            generateTimeGrid(startDate, tournament.endDate);
+          }
         }
       } catch (error) {
-        console.error('Error fetching tournament details:', error);
+        console.error('Error loading tournament details:', error);
       }
-    } else {
-      setSelectedTournament(null);
-    }
-  };
-
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    const { name, value } = e.target;
+    };
     
-    if (name === 'tournamentId') {
-      handleTournamentChange(value);
-    } else if (name === 'day') {
-      setFormData(prev => ({ ...prev, [name]: parseInt(value) || 1 }));
-    } else {
-      setFormData(prev => ({ ...prev, [name]: value }));
-    }
+    loadTournamentDetails();
+  }, [selectedTournamentId]);
+  
+  // Generate array of time slots based on settings
+  const generateTimeGrid = (startDate: Date, endDate: string) => {
+    if (!startDate) return;
     
-    // Clear error when field is edited
-    if (errors[name]) {
-      setErrors(prev => {
-        const newErrors = { ...prev };
-        delete newErrors[name];
-        return newErrors;
+    // Calculate number of days
+    const end = new Date(endDate);
+    const dayDiff = Math.ceil(Math.abs(end.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+    
+    // Generate time slots for each day
+    const grid = [];
+    
+    for (let day = 1; day <= dayDiff; day++) {
+      const date = new Date(startDate);
+      date.setDate(date.getDate() + (day - 1)); // Day 1 is start date
+      
+      // Parse start and end times
+      const [startHour, startMinute] = timeSettings.startTime.split(':').map(Number);
+      const [endHour, endMinute] = timeSettings.endTime.split(':').map(Number);
+      
+      // Convert to minutes for easier calculation
+      const startTotalMinutes = startHour * 60 + startMinute;
+      const endTotalMinutes = endHour * 60 + endMinute;
+      
+      // Create time slots
+      const daySlots = [];
+      for (let minutes = startTotalMinutes; minutes <= endTotalMinutes; minutes += timeSettings.interval) {
+        const hour = Math.floor(minutes / 60);
+        const minute = minutes % 60;
+        const timeString = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
+        
+        daySlots.push({
+          time: timeString,
+          dateString: date.toISOString().split('T')[0],
+          slots: [
+            // Default to empty slots
+            { courseId: '', format: '', startingHole: 1, holes: 9, teams: [] },
+            { courseId: '', format: '', startingHole: 10, holes: 9, teams: [] }
+          ]
+        });
+      }
+      
+      grid.push({
+        day,
+        date: date.toISOString().split('T')[0],
+        dateFormatted: date.toLocaleDateString('en-US', { 
+          weekday: 'short', 
+          month: 'short', 
+          day: 'numeric'
+        }),
+        slots: daySlots
       });
     }
+    
+    setTeeTimeGrid(grid);
   };
-
-  // Add a new tee time
-  const addTeeTime = () => {
-    setFormData(prev => ({
-      ...prev,
-      teeTimes: [
-        ...prev.teeTimes,
-        {
-          id: `teetime-${Date.now()}`,
-          time: '08:00',
-          format: '',
-          courseId: '',
-          startingHole: 1,
-          holes: 9
-        }
-      ]
-    }));
-  };
-
-  // Remove a tee time
-  const removeTeeTime = (teeTimeIndex: number) => {
-    if (formData.teeTimes.length === 1) {
-      return; // Keep at least one tee time
+  
+  // Handle time settings change
+  const updateTimeSettings = () => {
+    if (selectedTournament?.startDate) {
+      generateTimeGrid(
+        new Date(selectedTournament.startDate), 
+        selectedTournament.endDate
+      );
     }
-
-    setFormData(prev => ({
-      ...prev,
-      teeTimes: prev.teeTimes.filter((_, i) => i !== teeTimeIndex)
-    }));
   };
-
-  // Update tee time
-  const updateTeeTime = (teeTimeIndex: number, field: string, value: any) => {
-    const newTeeTimes = [...formData.teeTimes];
-    newTeeTimes[teeTimeIndex] = {
-      ...newTeeTimes[teeTimeIndex],
+  
+  // Filter courses for the selected tournament
+  const filteredCourses = useMemo(() => {
+    return courses.filter(course => course.tournamentId === selectedTournamentId);
+  }, [courses, selectedTournamentId]);
+  
+  // Update slot data
+  const updateSlot = (dayIndex: number, timeIndex: number, slotIndex: number, field: string, value: any) => {
+    const updatedGrid = [...teeTimeGrid];
+    updatedGrid[dayIndex].slots[timeIndex].slots[slotIndex] = {
+      ...updatedGrid[dayIndex].slots[timeIndex].slots[slotIndex],
       [field]: value
     };
-    setFormData(prev => ({ ...prev, teeTimes: newTeeTimes }));
-    
-    // Clear error
-    const errorKey = `teeTimes.${teeTimeIndex}.${field}`;
-    if (errors[errorKey]) {
-      setErrors(prev => {
-        const newErrors = { ...prev };
-        delete newErrors[errorKey];
-        return newErrors;
-      });
-    }
+    setTeeTimeGrid(updatedGrid);
   };
-
-  // Flatten schedule data for API
-  const flattenScheduleData = () => {
-    const matches = formData.teeTimes.map(teeTime => ({
-      id: `match-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
-      time: teeTime.time,
-      format: teeTime.format,
-      courseId: teeTime.courseId,
-      startingHole: teeTime.startingHole,
-      holes: teeTime.holes
-    }));
-
-    return {
-      tournamentId: formData.tournamentId,
-      day: formData.day,
-      date: formData.date,
-      matches: matches
-    };
-  };
-
-  const validateForm = () => {
-    const newErrors: Record<string, string> = {};
+  
+  // Apply a template to a specific time slot
+  const applyTemplate = (dayIndex: number, timeIndex: number, templateIndex: number) => {
+    const template = savedTemplates[templateIndex];
+    const updatedGrid = [...teeTimeGrid];
     
-    if (!formData.tournamentId) {
-      newErrors.tournamentId = 'Please select a tournament';
-    }
-    
-    if (!formData.date) {
-      newErrors.date = 'Date is required';
-    }
-    
-    formData.teeTimes.forEach((teeTime, teeTimeIndex) => {
-      if (!teeTime.time) {
-        newErrors[`teeTimes.${teeTimeIndex}.time`] = 'Tee time is required';
-      }
-      
-      if (!teeTime.format) {
-        newErrors[`teeTimes.${teeTimeIndex}.format`] = 'Format is required';
-      }
-      
-      if (!teeTime.courseId) {
-        newErrors[`teeTimes.${teeTimeIndex}.courseId`] = 'Course is required';
+    // Apply template pattern to slots
+    template.pattern.forEach((patternSlot: any, slotIndex: number) => {
+      if (slotIndex < updatedGrid[dayIndex].slots[timeIndex].slots.length) {
+        updatedGrid[dayIndex].slots[timeIndex].slots[slotIndex] = {
+          ...updatedGrid[dayIndex].slots[timeIndex].slots[slotIndex],
+          ...patternSlot,
+          // Keep existing courseId if it exists
+          courseId: updatedGrid[dayIndex].slots[timeIndex].slots[slotIndex].courseId || 
+                    (filteredCourses.length > 0 ? filteredCourses[0].id : '')
+        };
       }
     });
     
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+    setTeeTimeGrid(updatedGrid);
   };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  
+  // Apply a template to all time slots in a day
+  const applyTemplateToDay = (dayIndex: number, templateIndex: number) => {
+    const template = savedTemplates[templateIndex];
+    const updatedGrid = [...teeTimeGrid];
     
-    if (!validateForm()) {
+    updatedGrid[dayIndex].slots.forEach((timeSlot: any, timeIndex: number) => {
+      template.pattern.forEach((patternSlot: any, slotIndex: number) => {
+        if (slotIndex < timeSlot.slots.length) {
+          updatedGrid[dayIndex].slots[timeIndex].slots[slotIndex] = {
+            ...updatedGrid[dayIndex].slots[timeIndex].slots[slotIndex],
+            ...patternSlot,
+            // Keep existing courseId if it exists
+            courseId: updatedGrid[dayIndex].slots[timeIndex].slots[slotIndex].courseId || 
+                     (filteredCourses.length > 0 ? filteredCourses[0].id : '')
+          };
+        }
+      });
+    });
+    
+    setTeeTimeGrid(updatedGrid);
+  };
+  
+  // Set/clear all slots on a day
+  const clearDay = (dayIndex: number) => {
+    const updatedGrid = [...teeTimeGrid];
+    
+    updatedGrid[dayIndex].slots.forEach((timeSlot: any, timeIndex: number) => {
+      updatedGrid[dayIndex].slots[timeIndex].slots = updatedGrid[dayIndex].slots[timeIndex].slots.map(() => ({
+        courseId: '',
+        format: '',
+        startingHole: 1,
+        holes: 9,
+        teams: []
+      }));
+    });
+    
+    setTeeTimeGrid(updatedGrid);
+  };
+  
+  // Save the current schedule
+  const saveSchedule = async () => {
+    if (!selectedTournamentId) {
+      alert('Please select a tournament');
       return;
     }
     
     setIsSubmitting(true);
     
     try {
-      // Submit to the API
-      const formattedData = flattenScheduleData();
-      const response = await axios.post('/api/schedule/create', formattedData, {
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+      // Process the tee time grid into API-compatible format
+      for (const day of teeTimeGrid) {
+        // Skip days with no configured slots
+        if (!day.slots.some((slot: any) => 
+          slot.slots.some((s: any) => s.format && s.courseId)
+        )) {
+          continue;
         }
-      });
+        
+        // Collect all matches for this day
+        const matches = [];
+        
+        for (const timeSlot of day.slots) {
+          // Skip time slots with no configured slots
+          if (!timeSlot.slots.some((s: any) => s.format && s.courseId)) {
+            continue;
+          }
+          
+          // Add configured slots as matches
+          for (const slot of timeSlot.slots) {
+            if (slot.format && slot.courseId) {
+              matches.push({
+                // Keep time in HH:MM format - stored as is by the API in UTC
+                time: timeSlot.time,
+                format: slot.format,
+                courseId: slot.courseId,
+                startingHole: slot.startingHole || 1,
+                holes: slot.holes || 9
+              });
+            }
+          }
+        }
+        
+        // Skip if no matches for this day
+        if (matches.length === 0) continue;
+        
+        // Create schedule day with matches
+        const scheduleData = {
+          tournamentId: selectedTournamentId,
+          day: day.day,
+          date: day.date,
+          matches
+        };
+        
+        await axios.post('/api/schedule/create', scheduleData, {
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
+          }
+        });
+      }
       
-      console.log('Schedule created:', response.data);
       alert('Schedule created successfully!');
       router.push('/schedule');
     } catch (error: any) {
@@ -275,296 +351,347 @@ export default function NewSchedule() {
       setIsSubmitting(false);
     }
   };
-
-  // Filter courses based on selected tournament
-  const filteredCourses = courses.filter(course => course.tournamentId === formData.tournamentId);
-
+  
+  // Render select dropdown options for formats by type
+  const renderFormatOptions = () => {
+    // Group formats by type
+    const singleFormats = formats.filter(f => f.formatName.toLowerCase() === 'singles');
+    const twoPersonFormats = formats.filter(f => 
+      ['best ball', 'scramble', 'alternate shot', 'mod alt shot', 'modified alternate shot', 'chapman']
+      .includes(f.formatName.toLowerCase()) || f.formatName.toLowerCase().includes('2 man')
+    );
+    const teamFormats = formats.filter(f => f.isFourManTeam);
+    
+    return (
+      <>
+        <optgroup label="Individual Formats">
+          {singleFormats.map(format => (
+            <option key={format.id} value={format.formatName}>
+              {format.formatName} (1v1)
+            </option>
+          ))}
+        </optgroup>
+        <optgroup label="Two-Person Formats">
+          {twoPersonFormats.map(format => (
+            <option key={format.id} value={format.formatName}>
+              {format.formatName} (2v2)
+            </option>
+          ))}
+        </optgroup>
+        <optgroup label="Team Formats">
+          {teamFormats.map(format => (
+            <option key={format.id} value={format.formatName}>
+              {format.formatName} (4-man)
+            </option>
+          ))}
+        </optgroup>
+      </>
+    );
+  };
+  
   return (
     <>
       <Head>
-        <title>Create New Schedule | Gull Lake Golf Tournament</title>
+        <title>Schedule Builder | Gull Lake Golf Tournament</title>
       </Head>
 
-      <div className="px-4 sm:px-6 lg:px-8 py-8">
-        <div className="mb-8">
+      <div className="px-4 sm:px-6 lg:px-8 py-8 max-w-full">
+        <div className="mb-6">
           <Link href="/schedule" className="flex items-center text-sm text-gray-500 hover:text-gray-700">
             <ArrowLeftIcon className="mr-1 h-4 w-4" /> Back to Schedule
           </Link>
         </div>
 
-        <div className="md:flex md:items-center md:justify-between">
-          <div className="min-w-0 flex-1">
-            <h2 className="text-2xl font-bold leading-7 text-gray-900 sm:truncate sm:text-3xl sm:tracking-tight">
-              Create New Schedule Day
-            </h2>
-          </div>
-        </div>
-
-        <form onSubmit={handleSubmit} className="mt-8 space-y-8">
-          {/* Basic Information */}
-          <div className="bg-white shadow-sm ring-1 ring-gray-900/5 sm:rounded-xl md:col-span-2">
-            <div className="px-4 py-6 sm:p-8">
-              <div className="grid grid-cols-1 gap-x-6 gap-y-8 sm:grid-cols-6">
-                <div className="sm:col-span-3">
-                  <label htmlFor="tournamentId" className="block text-sm font-medium leading-6 text-gray-900">
-                    Tournament
-                  </label>
-                  <div className="mt-2">
-                    <select
-                      id="tournamentId"
-                      name="tournamentId"
-                      value={formData.tournamentId}
-                      onChange={handleChange}
-                      className={`block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ${
-                        errors.tournamentId ? 'ring-red-500' : 'ring-gray-300'
-                      } focus:ring-2 focus:ring-inset focus:ring-primary sm:text-sm sm:leading-6`}
-                    >
-                      <option value="">Select a tournament</option>
-                      {tournaments.map((tournament: any) => (
-                        <option key={tournament.id} value={tournament.id}>
-                          {tournament.name}
-                        </option>
-                      ))}
-                    </select>
-                    {errors.tournamentId && (
-                      <p className="mt-2 text-sm text-red-600">{errors.tournamentId}</p>
-                    )}
+        <div className="flex flex-col lg:flex-row lg:items-start gap-6">
+          {/* Left sidebar - Configuration */}
+          <div className="lg:w-80 flex-shrink-0 space-y-4">
+            <div className="bg-white shadow-sm ring-1 ring-gray-900/5 sm:rounded-xl overflow-hidden">
+              <div className="bg-primary/5 px-4 py-3 border-b border-gray-200">
+                <h2 className="text-lg font-semibold text-gray-900">Tournament</h2>
+              </div>
+              <div className="p-4">
+                <select
+                  className="block w-full rounded-md border-0 py-1.5 text-sm text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-primary"
+                  value={selectedTournamentId}
+                  onChange={(e) => setSelectedTournamentId(e.target.value)}
+                >
+                  <option value="">Select a tournament</option>
+                  {tournaments.map((tournament) => (
+                    <option key={tournament.id} value={tournament.id}>
+                      {tournament.name}
+                    </option>
+                  ))}
+                </select>
+                
+                {selectedTournament && (
+                  <div className="mt-2 text-sm text-gray-600">
+                    <p>Start: {new Date(selectedTournament.startDate).toLocaleDateString()}</p>
+                    <p>End: {new Date(selectedTournament.endDate).toLocaleDateString()}</p>
+                    <p>Duration: {scheduleConfig.days} days</p>
                   </div>
+                )}
+              </div>
+            </div>
+            
+            <div className="bg-white shadow-sm ring-1 ring-gray-900/5 sm:rounded-xl overflow-hidden">
+              <div className="bg-primary/5 px-4 py-3 border-b border-gray-200">
+                <h2 className="text-lg font-semibold text-gray-900">Time Settings</h2>
+              </div>
+              <div className="p-4 space-y-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Start Time</label>
+                  <input
+                    type="time"
+                    className="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-primary focus:ring-primary"
+                    value={timeSettings.startTime}
+                    onChange={(e) => setTimeSettings({...timeSettings, startTime: e.target.value})}
+                  />
                 </div>
-
-                <div className="sm:col-span-1">
-                  <label htmlFor="day" className="block text-sm font-medium leading-6 text-gray-900">
-                    Day Number
-                  </label>
-                  <div className="mt-2">
-                    <input
-                      type="number"
-                      name="day"
-                      id="day"
-                      min="1"
-                      value={formData.day}
-                      onChange={handleChange}
-                      className={`block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ${
-                        errors.day ? 'ring-red-500' : 'ring-gray-300'
-                      } placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-primary sm:text-sm sm:leading-6`}
-                    />
-                    {errors.day && (
-                      <p className="mt-2 text-sm text-red-600">{errors.day}</p>
-                    )}
-                  </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">End Time</label>
+                  <input
+                    type="time"
+                    className="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-primary focus:ring-primary"
+                    value={timeSettings.endTime}
+                    onChange={(e) => setTimeSettings({...timeSettings, endTime: e.target.value})}
+                  />
                 </div>
-
-                <div className="sm:col-span-2">
-                  <label htmlFor="date" className="block text-sm font-medium leading-6 text-gray-900">
-                    Date <span className="text-xs text-gray-500">(Auto-calculated)</span>
-                  </label>
-                  <div className="mt-2">
-                    <input
-                      type="date"
-                      name="date"
-                      id="date"
-                      value={formData.date}
-                      readOnly
-                      className={`block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset bg-gray-50 ${
-                        errors.date ? 'ring-red-500' : 'ring-gray-300'
-                      } placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-primary sm:text-sm sm:leading-6`}
-                    />
-                    {errors.date && (
-                      <p className="mt-2 text-sm text-red-600">{errors.date}</p>
-                    )}
-                  </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Interval (minutes)</label>
+                  <select
+                    className="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-primary focus:ring-primary"
+                    value={timeSettings.interval}
+                    onChange={(e) => setTimeSettings({...timeSettings, interval: parseInt(e.target.value)})}
+                  >
+                    <option value="5">5 minutes</option>
+                    <option value="10">10 minutes</option>
+                    <option value="15">15 minutes</option>
+                    <option value="20">20 minutes</option>
+                    <option value="30">30 minutes</option>
+                  </select>
+                </div>
+                <button
+                  type="button"
+                  onClick={updateTimeSettings}
+                  className="mt-2 inline-flex items-center rounded-md bg-primary px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-primary/90"
+                >
+                  Update Time Grid
+                </button>
+              </div>
+            </div>
+            
+            <div className="bg-white shadow-sm ring-1 ring-gray-900/5 sm:rounded-xl overflow-hidden">
+              <div className="bg-primary/5 px-4 py-3 border-b border-gray-200">
+                <h2 className="text-lg font-semibold text-gray-900">Quick Templates</h2>
+              </div>
+              <div className="p-4">
+                <div className="space-y-2">
+                  {savedTemplates.map((template, idx) => (
+                    <div key={idx} className="p-2 border border-gray-200 rounded-md bg-gray-50">
+                      <p className="text-sm font-medium">{template.name}</p>
+                      <div className="mt-1 text-xs text-gray-600">
+                        {template.pattern.map((p: any, i: number) => (
+                          <div key={i}>
+                            {p.format} ({p.holes} holes, starts at {p.startingHole})
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
+            
+            <div className="bg-white shadow-sm ring-1 ring-gray-900/5 sm:rounded-xl overflow-hidden">
+              <div className="bg-primary/5 px-4 py-3 border-b border-gray-200">
+                <h2 className="text-lg font-semibold text-gray-900">Actions</h2>
+              </div>
+              <div className="p-4">
+                <button
+                  type="button"
+                  onClick={saveSchedule}
+                  disabled={isSubmitting || !selectedTournamentId}
+                  className="w-full inline-flex justify-center items-center rounded-md bg-primary px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-primary/90 disabled:opacity-50"
+                >
+                  {isSubmitting ? 'Saving...' : 'Save Schedule'}
+                </button>
+              </div>
+            </div>
           </div>
-
-          {/* Tee Times */}
-          {formData.tournamentId ? (
-            <div className="bg-white shadow-sm ring-1 ring-gray-900/5 sm:rounded-xl md:col-span-2">
-              <div className="px-4 py-6 sm:p-8">
-                <div>
-                  <h3 className="text-base font-semibold leading-6 text-gray-900">Tee Times</h3>
-                  <p className="mt-1 text-sm text-gray-500">
-                    Schedule tee times for this day.
-                  </p>
-                  
-                  <div className="mt-5 space-y-8">
-                    {formData.teeTimes.map((teeTime, teeTimeIndex) => (
-                      <div key={teeTime.id} className="bg-gray-50 rounded-lg overflow-hidden">
-                        {/* Tee Time Header */}
-                        <div className="bg-gray-100 p-4 flex items-center justify-between">
-                          <div className="flex items-center">
-                            <ClockIcon className="h-5 w-5 text-gray-400 mr-2" />
-                            <h4 className="text-sm font-medium text-gray-700">Tee Time {teeTimeIndex + 1}</h4>
+          
+          {/* Main content - Schedule Grid */}
+          <div className="flex-grow">
+            <div className="bg-white shadow-sm ring-1 ring-gray-900/5 sm:rounded-xl overflow-hidden">
+              <div className="bg-primary/5 px-4 py-3 border-b border-gray-200 flex justify-between items-center">
+                <h2 className="text-lg font-semibold text-gray-900">Schedule Builder</h2>
+                {teeTimeGrid.length > 0 && (
+                  <div className="flex space-x-2">
+                    {teeTimeGrid.map((day, idx) => (
+                      <button
+                        key={idx}
+                        type="button"
+                        className={`px-3 py-1 text-sm rounded-md ${
+                          scheduleConfig.currentDay === day.day
+                            ? 'bg-primary text-white'
+                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        }`}
+                        onClick={() => setScheduleConfig({...scheduleConfig, currentDay: day.day})}
+                      >
+                        Day {day.day}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              
+              {!selectedTournamentId ? (
+                <div className="p-8 text-center text-gray-500">
+                  <p>Please select a tournament to start building the schedule</p>
+                </div>
+              ) : teeTimeGrid.length === 0 ? (
+                <div className="p-8 text-center text-gray-500">
+                  <p>Generating time grid...</p>
+                </div>
+              ) : (
+                <div className="overflow-auto">
+                  {/* Current day */}
+                  {teeTimeGrid.map((day, dayIndex) => (
+                    <div key={dayIndex} className={day.day === scheduleConfig.currentDay ? 'block' : 'hidden'}>
+                      <div className="px-4 py-3 bg-gray-50 flex justify-between items-center">
+                        <h3 className="text-md font-medium text-gray-900">
+                          Day {day.day} - {day.dateFormatted}
+                        </h3>
+                        <div className="flex space-x-2">
+                          <div className="relative">
+                            <select
+                              className="appearance-none pl-3 pr-10 py-1 text-xs bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary focus:border-primary"
+                              onChange={(e) => applyTemplateToDay(dayIndex, parseInt(e.target.value))}
+                              defaultValue=""
+                            >
+                              <option value="" disabled>Apply template...</option>
+                              {savedTemplates.map((template, idx) => (
+                                <option key={idx} value={idx}>{template.name}</option>
+                              ))}
+                            </select>
                           </div>
-                          <div className="flex items-center space-x-4">
-                            <input
-                              type="time"
-                              value={teeTime.time}
-                              onChange={(e) => updateTeeTime(teeTimeIndex, 'time', e.target.value)}
-                              className="rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary sm:text-sm"
-                            />
-                            {formData.teeTimes.length > 1 && (
-                              <button
-                                type="button"
-                                onClick={() => removeTeeTime(teeTimeIndex)}
-                                className="text-gray-400 hover:text-red-500"
-                              >
-                                <XMarkIcon className="h-5 w-5" />
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                        
-                        {/* Match details */}
-                        <div className="p-4">
-                          <div className="border border-gray-200 rounded-md p-3 bg-white">
-                            <div className="grid grid-cols-2 gap-3">
-                              {/* Format */}
-                              <div className="col-span-1">
-                                <label className="block text-xs font-medium text-gray-700">Format</label>
-                                <select
-                                  value={teeTime.format}
-                                  onChange={(e) => updateTeeTime(teeTimeIndex, 'format', e.target.value)}
-                                  className="mt-1 block w-full rounded-md border-gray-300 text-xs shadow-sm focus:border-primary focus:ring-primary"
-                                >
-                                  <option value="">Select format</option>
-                                  <optgroup label="Individual Formats">
-                                    {formats
-                                      .filter((format: any) => format.formatName.toLowerCase() === 'singles')
-                                      .map((format: any) => (
-                                        <option key={format.id} value={format.formatName}>
-                                          {format.formatName} (1v1)
-                                        </option>
-                                      ))
-                                    }
-                                  </optgroup>
-                                  <optgroup label="Two-Person Formats">
-                                    {formats
-                                      .filter((format: any) => 
-                                        format.formatName.toLowerCase().includes('2 man') ||
-                                        ['best ball', 'scramble', 'alternate shot', 'mod alt shot', 'modified alternate shot', 'chapman'].includes(format.formatName.toLowerCase())
-                                      )
-                                      .map((format: any) => (
-                                        <option key={format.id} value={format.formatName}>
-                                          {format.formatName} (2v2)
-                                        </option>
-                                      ))
-                                    }
-                                  </optgroup>
-                                  <optgroup label="Team Formats">
-                                    {formats
-                                      .filter((format: any) => format.isFourManTeam)
-                                      .map((format: any) => (
-                                        <option key={format.id} value={format.formatName}>
-                                          {format.formatName} (No Handicaps)
-                                        </option>
-                                      ))
-                                    }
-                                  </optgroup>
-                                </select>
-                                {errors[`teeTimes.${teeTimeIndex}.format`] && (
-                                  <p className="mt-1 text-xs text-red-600">{errors[`teeTimes.${teeTimeIndex}.format`]}</p>
-                                )}
-                                {teeTime.format && formats.find((f: any) => f.formatName === teeTime.format)?.isFourManTeam && (
-                                  <p className="mt-1 text-xs text-blue-600 font-medium">
-                                    Note: 4-Man Team format uses gross scoring only (no handicaps)
-                                  </p>
-                                )}
-                              </div>
-                              
-                              {/* Course */}
-                              <div className="col-span-1">
-                                <label className="block text-xs font-medium text-gray-700">Course</label>
-                                <select
-                                  value={teeTime.courseId}
-                                  onChange={(e) => updateTeeTime(teeTimeIndex, 'courseId', e.target.value)}
-                                  className="mt-1 block w-full rounded-md border-gray-300 text-xs shadow-sm focus:border-primary focus:ring-primary"
-                                >
-                                  <option value="">Select course</option>
-                                  {filteredCourses.map((course: any) => (
-                                    <option key={course.id} value={course.id}>
-                                      {course.name}
-                                    </option>
-                                  ))}
-                                </select>
-                                {errors[`teeTimes.${teeTimeIndex}.courseId`] && (
-                                  <p className="mt-1 text-xs text-red-600">{errors[`teeTimes.${teeTimeIndex}.courseId`]}</p>
-                                )}
-                              </div>
-                              
-                              {/* Number of Holes */}
-                              <div className="col-span-1">
-                                <label className="block text-xs font-medium text-gray-700">Holes</label>
-                                <select
-                                  value={teeTime.holes}
-                                  onChange={(e) => updateTeeTime(teeTimeIndex, 'holes', parseInt(e.target.value))}
-                                  className="mt-1 block w-full rounded-md border-gray-300 text-xs shadow-sm focus:border-primary focus:ring-primary"
-                                >
-                                  <option value="9">9 Holes</option>
-                                  <option value="18">18 Holes</option>
-                                </select>
-                                {teeTime.holes === 9 && (
-                                  <p className="mt-1 text-xs text-blue-600">
-                                    Tip: Create separate tee times for front 9 and back 9 if using different formats
-                                  </p>
-                                )}
-                              </div>
-                              
-                              {/* Starting Hole */}
-                              <div className="col-span-1">
-                                <label className="block text-xs font-medium text-gray-700">Starting Hole</label>
-                                <select
-                                  value={teeTime.startingHole}
-                                  onChange={(e) => updateTeeTime(teeTimeIndex, 'startingHole', parseInt(e.target.value))}
-                                  className="mt-1 block w-full rounded-md border-gray-300 text-xs shadow-sm focus:border-primary focus:ring-primary"
-                                >
-                                  <option value="1">Front 9 (Hole 1)</option>
-                                  <option value="10">Back 9 (Hole 10)</option>
-                                </select>
-                              </div>
-                            </div>
-                          </div>
+                          <button
+                            type="button"
+                            onClick={() => clearDay(dayIndex)}
+                            className="inline-flex items-center px-2 py-1 text-xs font-medium rounded-md text-red-600 bg-red-50 hover:bg-red-100"
+                          >
+                            <TrashIcon className="h-3 w-3 mr-1" />
+                            Clear Day
+                          </button>
                         </div>
                       </div>
-                    ))}
-                    
-                    {/* Add Tee Time Button */}
-                    <button
-                      type="button"
-                      onClick={addTeeTime}
-                      className="flex w-full items-center justify-center rounded-md bg-primary px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-primary/90"
-                    >
-                      <PlusIcon className="-ml-0.5 mr-1.5 h-5 w-5" />
-                      Add New Tee Time
-                    </button>
-                  </div>
+                      
+                      {/* Time slots grid */}
+                      <div className="p-4">
+                        <div className="grid grid-cols-1 gap-3">
+                          {day.slots.map((timeSlot: any, timeIndex: number) => (
+                            <div key={timeIndex} className="border border-gray-200 rounded-md overflow-hidden">
+                              <div className="bg-gray-50 px-3 py-2 flex justify-between items-center">
+                                <div className="text-sm font-medium">{timeSlot.time}</div>
+                                <div className="relative">
+                                  <select
+                                    className="appearance-none pl-2 pr-8 py-1 text-xs bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary focus:border-primary"
+                                    onChange={(e) => applyTemplate(dayIndex, timeIndex, parseInt(e.target.value))}
+                                    defaultValue=""
+                                  >
+                                    <option value="" disabled>Apply template...</option>
+                                    {savedTemplates.map((template, idx) => (
+                                      <option key={idx} value={idx}>{template.name}</option>
+                                    ))}
+                                  </select>
+                                </div>
+                              </div>
+                              
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-2 p-2">
+                                {timeSlot.slots.map((slot: any, slotIndex: number) => (
+                                  <div key={slotIndex} className="p-2 border border-gray-100 rounded bg-gray-50">
+                                    <div className="grid grid-cols-2 gap-2">
+                                      {/* Format selection */}
+                                      <div>
+                                        <label className="block text-xs font-medium text-gray-700">Format</label>
+                                        <select
+                                          className="mt-1 block w-full rounded-md border-gray-300 text-xs shadow-sm focus:border-primary focus:ring-primary"
+                                          value={slot.format}
+                                          onChange={(e) => updateSlot(dayIndex, timeIndex, slotIndex, 'format', e.target.value)}
+                                        >
+                                          <option value="">Select format</option>
+                                          {renderFormatOptions()}
+                                        </select>
+                                      </div>
+                                      
+                                      {/* Course selection */}
+                                      <div>
+                                        <label className="block text-xs font-medium text-gray-700">Course</label>
+                                        <select
+                                          className="mt-1 block w-full rounded-md border-gray-300 text-xs shadow-sm focus:border-primary focus:ring-primary"
+                                          value={slot.courseId}
+                                          onChange={(e) => updateSlot(dayIndex, timeIndex, slotIndex, 'courseId', e.target.value)}
+                                        >
+                                          <option value="">Select course</option>
+                                          {filteredCourses.map(course => (
+                                            <option key={course.id} value={course.id}>
+                                              {course.name}
+                                            </option>
+                                          ))}
+                                        </select>
+                                      </div>
+                                      
+                                      {/* Holes */}
+                                      <div>
+                                        <label className="block text-xs font-medium text-gray-700">Holes</label>
+                                        <select
+                                          className="mt-1 block w-full rounded-md border-gray-300 text-xs shadow-sm focus:border-primary focus:ring-primary"
+                                          value={slot.holes}
+                                          onChange={(e) => updateSlot(dayIndex, timeIndex, slotIndex, 'holes', parseInt(e.target.value))}
+                                        >
+                                          <option value="9">9 Holes</option>
+                                          <option value="18">18 Holes</option>
+                                        </select>
+                                      </div>
+                                      
+                                      {/* Starting hole */}
+                                      <div>
+                                        <label className="block text-xs font-medium text-gray-700">Starting Hole</label>
+                                        <select
+                                          className="mt-1 block w-full rounded-md border-gray-300 text-xs shadow-sm focus:border-primary focus:ring-primary"
+                                          value={slot.startingHole}
+                                          onChange={(e) => updateSlot(dayIndex, timeIndex, slotIndex, 'startingHole', parseInt(e.target.value))}
+                                        >
+                                          <option value="1">Front 9 (Hole 1)</option>
+                                          <option value="10">Back 9 (Hole 10)</option>
+                                        </select>
+                                      </div>
+                                    </div>
+                                    
+                                    {/* Status indicator */}
+                                    {slot.format && slot.courseId ? (
+                                      <div className="mt-2 flex items-center text-xs text-green-700">
+                                        <CheckIcon className="h-3 w-3 mr-1" />
+                                        Configured
+                                      </div>
+                                    ) : (
+                                      <div className="mt-2 text-xs text-gray-400">
+                                        Not configured
+                                      </div>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              </div>
+              )}
             </div>
-          ) : (
-            <div className="bg-white shadow-sm ring-1 ring-gray-900/5 sm:rounded-xl p-6 text-center">
-              <p className="text-gray-500">Please select a tournament to configure tee times</p>
-            </div>
-          )}
-
-          {/* Form Actions */}
-          <div className="flex justify-end">
-            <Link
-              href="/schedule"
-              className="rounded-md px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
-            >
-              Cancel
-            </Link>
-            <button
-              type="submit"
-              disabled={isSubmitting || !formData.tournamentId}
-              className="ml-3 inline-flex justify-center rounded-md bg-primary px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-primary/90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:opacity-70"
-            >
-              {isSubmitting ? 'Creating...' : 'Create Schedule'}
-            </button>
           </div>
-        </form>
+        </div>
       </div>
     </>
   );

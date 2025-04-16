@@ -42,6 +42,13 @@ function formatDate(dateString: string) {
   });
 }
 
+// Helper function to format ordinal numbers (1st, 2nd, 3rd, etc.)
+function ordinal(n: number): string {
+  const suffixes = ['th', 'st', 'nd', 'rd'];
+  const v = n % 100;
+  return n + (suffixes[(v - 20) % 10] || suffixes[v] || suffixes[0]);
+}
+
 // Helper function to calculate duration in days
 function calculateDurationDays(startDateStr: string, endDateStr: string) {
   if (!startDateStr || !endDateStr) return 0;
@@ -229,6 +236,41 @@ export default function TournamentDetails() {
       loadMatchPlayers();
     }
   }, [activeTab, schedules, matchPlayerData]);
+  
+  // Effect to refresh payment data when the money tab is active
+  useEffect(() => {
+    if (activeTab === 'money' && tournament && tournament.teams) {
+      // Initialize or refresh payment status for all players
+      const refreshPaymentStatuses = async () => {
+        try {
+          // Get the latest player data including payments
+          const playerData: Record<string, { buyIn: boolean, ctp: boolean, skins: boolean }> = {};
+          
+          // Update the state with the latest status
+          tournament.teams.forEach((team: any) => {
+            (team.players || []).forEach((player: any) => {
+              playerData[player.id] = {
+                buyIn: player.payments?.some((p: any) => p.type === 'BUY_IN' && p.status === 'PAID') || false,
+                ctp: player.payments?.some((p: any) => p.type === 'CTP_ENTRY' && p.status === 'PAID') || false,
+                skins: player.payments?.some((p: any) => p.type === 'SKINS_ENTRY' && p.status === 'PAID') || false
+              };
+            });
+          });
+          
+          setPaymentStatuses(playerData);
+        } catch (err) {
+          console.error("Error loading payment statuses:", err);
+        }
+      };
+      
+      refreshPaymentStatuses();
+    }
+  }, [activeTab, tournament]);
+
+  const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(null);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [paymentStatuses, setPaymentStatuses] = useState<Record<string, { buyIn: boolean, ctp: boolean, skins: boolean }>>({});
+  const [isRefreshingPayments, setIsRefreshingPayments] = useState(false);
 
   const tabs = [
     { name: 'Overview', id: 'overview' },
@@ -236,6 +278,7 @@ export default function TournamentDetails() {
     { name: 'Scorecards', id: 'scorecards' },
     { name: 'Leaderboard', id: 'leaderboard' },
     { name: 'Teams & Players', id: 'teams' },
+    { name: 'Money', id: 'money' },
     { name: 'Settings', id: 'settings' },
   ];
 
@@ -426,7 +469,7 @@ export default function TournamentDetails() {
                           <dt className="text-sm font-medium text-gray-500 truncate">Matches</dt>
                           <dd>
                             <div className="text-lg font-medium text-gray-900">
-                              {schedules.reduce((total, day) => total + day.matches.length, 0)}
+                              {schedules.reduce((total: number, day: any) => total + day.matches.length, 0)}
                             </div>
                           </dd>
                         </dl>
@@ -653,6 +696,58 @@ export default function TournamentDetails() {
                   </div>
                 </div>
                 
+                {/* Financial Information */}
+                <div className="bg-white overflow-hidden shadow rounded-lg">
+                  <div className="px-5 py-4 border-b border-gray-200">
+                    <h3 className="text-base font-semibold text-gray-900">Financial Information</h3>
+                  </div>
+                  
+                  <div className="px-5 py-3">
+                    <dl className="grid grid-cols-1 gap-x-4 gap-y-6 sm:grid-cols-2">
+                      <div className="sm:col-span-1">
+                        <dt className="text-sm font-medium text-gray-500">Buy-In Amount</dt>
+                        <dd className="mt-1 text-sm text-gray-900">
+                          {tournament.buyIn ? `$${tournament.buyIn.toFixed(2)}` : 'Not set'}
+                        </dd>
+                      </div>
+                      <div className="sm:col-span-1">
+                        <dt className="text-sm font-medium text-gray-500">Total Prize Pool</dt>
+                        <dd className="mt-1 text-sm text-gray-900">
+                          {tournament.totalPrize ? `$${tournament.totalPrize.toFixed(2)}` : 'Not set'}
+                        </dd>
+                      </div>
+                      {tournament.hasCTP && (
+                        <div className="sm:col-span-1">
+                          <dt className="text-sm font-medium text-gray-500">Closest to Pin Prize</dt>
+                          <dd className="mt-1 text-sm text-gray-900">
+                            {tournament.ctpPrizeAmount ? `$${tournament.ctpPrizeAmount.toFixed(2)}` : 'Not set'}
+                          </dd>
+                        </div>
+                      )}
+                      {tournament.hasSkins && (
+                        <div className="sm:col-span-1">
+                          <dt className="text-sm font-medium text-gray-500">Skins Prize</dt>
+                          <dd className="mt-1 text-sm text-gray-900">
+                            {tournament.skinsPrizeAmount ? `$${tournament.skinsPrizeAmount.toFixed(2)}` : 'Not set'}
+                          </dd>
+                        </div>
+                      )}
+                      {tournament.payoutStructure && (
+                        <div className="sm:col-span-2">
+                          <dt className="text-sm font-medium text-gray-500">Payout Structure</dt>
+                          <dd className="mt-1 text-sm text-gray-900">
+                            <div className="bg-gray-50 p-2 rounded">
+                              <pre className="text-xs overflow-x-auto">
+                                {JSON.stringify(tournament.payoutStructure, null, 2)}
+                              </pre>
+                            </div>
+                          </dd>
+                        </div>
+                      )}
+                    </dl>
+                  </div>
+                </div>
+                
                 {/* Format Multipliers */}
                 <div className="bg-white overflow-hidden shadow rounded-lg">
                   <div className="px-5 py-4 border-b border-gray-200">
@@ -705,7 +800,7 @@ export default function TournamentDetails() {
                   <div className="px-5 py-3">
                     <div className="overflow-x-auto">
                       <ul className="divide-y divide-gray-200">
-                        {schedules.flatMap((day) => day.matches).slice(0, 5).map((match: any) => (
+                        {schedules.flatMap((day: any) => day.matches).slice(0, 5).map((match: any) => (
                           <li key={match.id} className="py-4">
                             <div className="flex items-center justify-between">
                               <div className="flex items-center space-x-3">
@@ -714,12 +809,7 @@ export default function TournamentDetails() {
                               </div>
                               
                               <div className="flex space-x-2">
-                                <Link 
-                                  href={`/tournaments/${id}/matches/${match.id}/players`}
-                                  className="text-primary hover:text-primary/80"
-                                >
-                                  <UserGroupIcon className="h-4 w-4" />
-                                </Link>
+                                {/* Individual player assignment removed - use batch assign instead */}
                                 <Link 
                                   href={`/tournaments/${id}/matches/${match.id}/scorecard`}
                                   className="text-primary hover:text-primary/80"
@@ -753,7 +843,7 @@ export default function TournamentDetails() {
                           </li>
                         ))}
                         
-                        {schedules.flatMap((day) => day.matches).length === 0 && (
+                        {schedules.flatMap((day: any) => day.matches).length === 0 && (
                           <li className="py-4 text-center text-sm text-gray-500">
                             No matches scheduled yet
                           </li>
@@ -822,13 +912,7 @@ export default function TournamentDetails() {
                                   </td>
                                   <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{match.course}</td>
                                   <td className="whitespace-nowrap px-3 py-4 text-sm text-right space-x-2">
-                                    <Link 
-                                      href={`/tournaments/${id}/matches/${match.id}/players`}
-                                      className="text-primary hover:text-primary/80"
-                                      title="Assign Players"
-                                    >
-                                      <UserGroupIcon className="inline-block h-5 w-5" />
-                                    </Link>
+                                    {/* Individual player assignment removed - use batch assign instead */}
                                     <Link 
                                       href={`/tournaments/${id}/matches/${match.id}/scorecard`}
                                       className="text-primary hover:text-primary/80"
@@ -889,7 +973,7 @@ export default function TournamentDetails() {
                               className="text-gray-400 hover:text-primary"
                             >
                               <PencilIcon className="h-5 w-5" />
-                              <span className="sr-only">Edit</span>
+                              <span className="sr-only">Edit Team</span>
                             </Link>
                           </div>
                         </div>
@@ -901,14 +985,29 @@ export default function TournamentDetails() {
                           <div className="flex items-center space-x-2 text-gray-500">
                             <UserGroupIcon className="h-5 w-5 text-gray-400" />
                             <span>{team.playerCount || (team.players ? team.players.length : 0)} Players</span>
+                            
+                            {/* Home/Away Status */}
+                            {team.metadata && (
+                              <span className={`ml-2 inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset ${
+                                (typeof team.metadata === 'string' 
+                                  ? JSON.parse(team.metadata)?.isHomeTeam 
+                                  : team.metadata?.isHomeTeam) === true
+                                  ? 'bg-blue-50 text-blue-700 ring-blue-600/20'
+                                  : 'bg-gray-50 text-gray-700 ring-gray-600/20'
+                              }`}>
+                                {(typeof team.metadata === 'string' 
+                                  ? JSON.parse(team.metadata)?.isHomeTeam 
+                                  : team.metadata?.isHomeTeam) === true ? 'Home' : 'Away'}
+                              </span>
+                            )}
                           </div>
                           
                           {/* Team Performance (if available) */}
                           {schedules && schedules.length > 0 && (
                             <div className="text-right">
                               <span className="text-xs font-medium text-gray-500">
-                                {schedules.reduce((points, day) => {
-                                  return points + day.matches.reduce((matchPoints, match) => {
+                                {schedules.reduce((points: number, day: any) => {
+                                  return points + day.matches.reduce((matchPoints: number, match: any) => {
                                     if (match.points) {
                                       if (match.homeTeam === team.name) {
                                         return matchPoints + (match.points.homeTeamPoints || 0);
@@ -1045,7 +1144,7 @@ export default function TournamentDetails() {
                         })}
                         
                         {/* If no players */}
-                        {tournament.teams.flatMap(team => team.players || []).length === 0 && (
+                        {tournament.teams.flatMap((team: any) => team.players || []).length === 0 && (
                           <tr>
                             <td colSpan={5} className="px-6 py-4 text-center text-sm text-gray-500">
                               No players assigned to any team yet.
@@ -1084,7 +1183,7 @@ export default function TournamentDetails() {
                   </Link>
                   <button 
                     className="inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
-                    onClick={() => mutate()}
+                    onClick={() => window.location.reload()}
                   >
                     <ArrowPathIcon className="h-4 w-4 mr-1" />
                     Refresh
@@ -1094,7 +1193,7 @@ export default function TournamentDetails() {
 
               {/* Multi-match Scorecard View */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {schedules.flatMap(day => day.matches).map((match: any) => {
+                {schedules.flatMap((day: any) => day.matches).map((match: any) => {
                   // Calculate match statistics
                   const homeWins = match.holeResults?.filter((h: any) => 
                     h.homeTeamNetScore !== null && h.awayTeamNetScore !== null && 
@@ -1298,7 +1397,7 @@ export default function TournamentDetails() {
                   );
                 })}
                 
-                {schedules.flatMap(day => day.matches).length === 0 && (
+                {schedules.flatMap((day: any) => day.matches).length === 0 && (
                   <div className="col-span-2 bg-white shadow overflow-hidden sm:rounded-lg p-6">
                     <div className="text-center text-gray-500">
                       No matches scheduled yet
@@ -1327,7 +1426,7 @@ export default function TournamentDetails() {
                   </select>
                   <button 
                     className="inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
-                    onClick={() => mutate()}
+                    onClick={() => window.location.reload()}
                   >
                     <ArrowPathIcon className="h-4 w-4 mr-1" />
                     Refresh
@@ -1497,7 +1596,7 @@ export default function TournamentDetails() {
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
                       {/* Collect all players and their stats */}
-                      {tournament.teams.flatMap(team => 
+                      {tournament.teams.flatMap((team: any) => 
                         (team.players || []).map((player: any) => {
                           // Initialize player stats
                           const stats = {
@@ -1559,9 +1658,9 @@ export default function TournamentDetails() {
                         })
                       )
                       // Sort by points
-                      .sort((a, b) => b.points - a.points || b.holesWon - a.holesWon)
+                      .sort((a: any, b: any) => b.points - a.points || b.holesWon - a.holesWon)
                       // Generate rows
-                      .map((playerStats, index) => {
+                      .map((playerStats: any, index: number) => {
                         const winRate = playerStats.matchesPlayed > 0 
                           ? ((playerStats.matchesWon / playerStats.matchesPlayed) * 100).toFixed(1) 
                           : '0.0';
@@ -1613,7 +1712,7 @@ export default function TournamentDetails() {
                         );
                       })}
                       
-                      {tournament.teams.flatMap(team => team.players || []).length === 0 && (
+                      {tournament.teams.flatMap((team: any) => team.players || []).length === 0 && (
                         <tr>
                           <td colSpan={6} className="px-4 py-4 text-center text-sm text-gray-500">
                             No player data available
@@ -1717,6 +1816,730 @@ export default function TournamentDetails() {
                     </div>
                   </div>
                 ))}
+              </div>
+            </div>
+          )}
+
+          {/* Money Tab */}
+          {activeTab === 'money' && (
+            <div>
+              <div className="flex justify-between items-center mb-6">
+                <h3 className="text-lg font-semibold text-gray-900">Tournament Financial Information</h3>
+                <div className="flex space-x-3">
+                  <button
+                    onClick={() => window.location.reload()}
+                    className="inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+                  >
+                    <ArrowPathIcon className="-ml-0.5 mr-1.5 h-4 w-4" />
+                    Refresh
+                  </button>
+                </div>
+              </div>
+
+              {/* Overview Cards */}
+              <div className="mb-8 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
+                {/* Buy-In */}
+                <div className="bg-white overflow-hidden shadow rounded-lg">
+                  <div className="p-5">
+                    <div className="flex items-center">
+                      <div className="flex-shrink-0 bg-green-100 rounded-md p-3">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                      </div>
+                      <div className="ml-5 w-0 flex-1">
+                        <dl>
+                          <dt className="text-sm font-medium text-gray-500 truncate">Buy-In Amount</dt>
+                          <dd>
+                            <div className="text-lg font-medium text-gray-900">
+                              {tournament.buyIn ? `$${tournament.buyIn.toFixed(2)}` : 'Not set'}
+                            </div>
+                          </dd>
+                        </dl>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Total Prize */}
+                <div className="bg-white overflow-hidden shadow rounded-lg">
+                  <div className="p-5">
+                    <div className="flex items-center">
+                      <div className="flex-shrink-0 bg-green-100 rounded-md p-3">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
+                        </svg>
+                      </div>
+                      <div className="ml-5 w-0 flex-1">
+                        <dl>
+                          <dt className="text-sm font-medium text-gray-500 truncate">Total Prize Pool</dt>
+                          <dd>
+                            <div className="text-lg font-medium text-gray-900">
+                              {tournament.totalPrize ? `$${tournament.totalPrize.toFixed(2)}` : (tournament.buyIn ? `$${(tournament.buyIn * (tournament.teams.reduce((acc: number, team: any) => acc + (team.players ? team.players.length : 0), 0))).toFixed(2)}` : 'Not set')}
+                            </div>
+                          </dd>
+                        </dl>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* CTP Prize */}
+                {tournament.hasCTP && (
+                  <div className="bg-white overflow-hidden shadow rounded-lg">
+                    <div className="p-5">
+                      <div className="flex items-center">
+                        <div className="flex-shrink-0 bg-yellow-100 rounded-md p-3">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-yellow-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                          </svg>
+                        </div>
+                        <div className="ml-5 w-0 flex-1">
+                          <dl>
+                            <dt className="text-sm font-medium text-gray-500 truncate">CTP Prizes</dt>
+                            <dd>
+                              <div className="text-lg font-medium text-gray-900">
+                                {tournament.ctpPrizeAmount ? 
+                                  // Original specified amount
+                                  `$${tournament.ctpPrizeAmount.toFixed(2)}` : 
+                                  // Calculate based on number of par 3 holes
+                                  tournament.buyIn ? 
+                                    `$${(tournament.buyIn / (tournament.courses.reduce(
+                                      (count: number, course: any) => count + (course.holes?.filter((hole: any) => hole.isPar3)?.length || 0), 
+                                      1 // Ensure we don't divide by zero
+                                    ))).toFixed(2)} per hole` : 
+                                    'Not set'
+                                }
+                              </div>
+                            </dd>
+                          </dl>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Skins Prize */}
+                {tournament.hasSkins && (
+                  <div className="bg-white overflow-hidden shadow rounded-lg">
+                    <div className="p-5">
+                      <div className="flex items-center">
+                        <div className="flex-shrink-0 bg-purple-100 rounded-md p-3">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                          </svg>
+                        </div>
+                        <div className="ml-5 w-0 flex-1">
+                          <dl>
+                            <dt className="text-sm font-medium text-gray-500 truncate">Skins Prizes</dt>
+                            <dd>
+                              <div className="text-lg font-medium text-gray-900">
+                                {tournament.skinsPrizeAmount ? 
+                                  // Original specified amount
+                                  `$${tournament.skinsPrizeAmount.toFixed(2)}` : 
+                                  // Calculate based on number of players
+                                  tournament.buyIn && tournament.teams ? 
+                                    `$${(tournament.buyIn * (tournament.teams.reduce(
+                                      (count: number, team: any) => count + (team.players?.length || 0), 
+                                      0
+                                    ))).toFixed(2)} total pot` : 
+                                    'Not set'
+                                }
+                              </div>
+                            </dd>
+                          </dl>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Team Prize Payout Structure */}
+              <div className="grid grid-cols-1 gap-6 mb-8">
+                <div className="bg-white overflow-hidden shadow rounded-lg">
+                  <div className="px-5 py-4 border-b border-gray-200 flex justify-between">
+                    <h3 className="text-base font-semibold text-gray-900">Team Prize Payout Structure</h3>
+                  </div>
+                  
+                  <div className="px-5 py-3">
+                    {tournament.payoutStructure ? (
+                      <table className="min-w-full">
+                        <thead className="bg-gray-50">
+                          <tr>
+                            <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Position</th>
+                            <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Percentage</th>
+                            <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Amount</th>
+                          </tr>
+                        </thead>
+                        <tbody className="bg-white divide-y divide-gray-200">
+                          {Object.entries(tournament.payoutStructure)
+                            // Filter to only show positions up to the number of teams
+                            .filter(([position, _]) => parseInt(position) <= tournament.teams?.length)
+                            .map(([position, percentage]: [string, any]) => {
+                              const totalPrize = tournament.totalPrize || 
+                                (tournament.buyIn ? (tournament.buyIn * tournament.teams.reduce((acc: number, team: any) => acc + (team.players?.length || 0), 0)) : 0);
+                              
+                              return (
+                                <tr key={position}>
+                                  <td className="px-3 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{ordinal(parseInt(position))}</td>
+                                  <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-500">{percentage}%</td>
+                                  <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-900">
+                                    {totalPrize ? `$${((totalPrize * percentage) / 100).toFixed(2)}` : '-'}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                        </tbody>
+                      </table>
+                    ) : (
+                      <div className="py-4 text-center text-sm text-gray-500">No payout structure defined</div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* CTP and Skins Winners */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* CTP Results */}
+                {tournament.hasCTP && (
+                  <div className="bg-white overflow-hidden shadow rounded-lg">
+                    <div className="px-5 py-4 border-b border-gray-200">
+                      <h3 className="text-base font-semibold text-gray-900">Closest to Pin Results</h3>
+                    </div>
+                    
+                    <div className="px-5 py-3">
+                      {tournament.ctpResults && tournament.ctpResults.length > 0 ? (
+                        <div className="overflow-x-auto">
+                          <table className="min-w-full divide-y divide-gray-200">
+                            <thead className="bg-gray-50">
+                              <tr>
+                                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Player</th>
+                                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Hole</th>
+                                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Distance</th>
+                                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Prize</th>
+                                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Paid</th>
+                              </tr>
+                            </thead>
+                            <tbody className="bg-white divide-y divide-gray-200">
+                              {tournament.ctpResults.map((ctp: any) => (
+                                <tr key={ctp.id}>
+                                  <td className="px-3 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                    {ctp.player?.name}
+                                  </td>
+                                  <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-500">
+                                    {ctp.hole?.number} ({ctp.hole?.course?.name})
+                                  </td>
+                                  <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-500">
+                                    {ctp.distance ? `${ctp.distance} ft` : '-'}
+                                  </td>
+                                  <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-900">
+                                    {ctp.prize ? `$${ctp.prize.toFixed(2)}` : '-'}
+                                  </td>
+                                  <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-500">
+                                    {ctp.paid ? (
+                                      <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
+                                        Paid
+                                      </span>
+                                    ) : (
+                                      <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">
+                                        Pending
+                                      </span>
+                                    )}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      ) : (
+                        <div className="py-4 text-center text-sm text-gray-500">No CTP winners recorded yet</div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Skins Results */}
+                {tournament.hasSkins && (
+                  <div className="bg-white overflow-hidden shadow rounded-lg">
+                    <div className="px-5 py-4 border-b border-gray-200">
+                      <h3 className="text-base font-semibold text-gray-900">Skins Results</h3>
+                    </div>
+                    
+                    <div className="px-5 py-3">
+                      {tournament.skinsResults && tournament.skinsResults.length > 0 ? (
+                        <div className="overflow-x-auto">
+                          <table className="min-w-full divide-y divide-gray-200">
+                            <thead className="bg-gray-50">
+                              <tr>
+                                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Player</th>
+                                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Hole</th>
+                                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Score</th>
+                                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Prize</th>
+                                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Paid</th>
+                              </tr>
+                            </thead>
+                            <tbody className="bg-white divide-y divide-gray-200">
+                              {tournament.skinsResults.map((skin: any) => (
+                                <tr key={skin.id}>
+                                  <td className="px-3 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                    {skin.player?.name}
+                                  </td>
+                                  <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-500">
+                                    Hole {skin.holeNumber}
+                                  </td>
+                                  <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-500">
+                                    {skin.score}
+                                  </td>
+                                  <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-900">
+                                    {skin.prize ? `$${skin.prize.toFixed(2)}` : '-'}
+                                  </td>
+                                  <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-500">
+                                    {skin.paid ? (
+                                      <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
+                                        Paid
+                                      </span>
+                                    ) : (
+                                      <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">
+                                        Pending
+                                      </span>
+                                    )}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      ) : (
+                        <div className="py-4 text-center text-sm text-gray-500">No skins winners recorded yet</div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Payment Management */}
+              <div className="mt-8 mb-8">
+                <div className="bg-white overflow-hidden shadow rounded-lg">
+                  <div className="px-5 py-4 border-b border-gray-200 flex justify-between">
+                    <h3 className="text-base font-semibold text-gray-900">Payment Management</h3>
+                    <button
+                      onClick={async () => {
+                        setIsRefreshingPayments(true);
+                        try {
+                          // Refetch the tournament data to get fresh payment info
+                          const { data } = await axios.get(`/api/tournaments/${id}`);
+                          if (data?.tournament) {
+                            // Update the state with fresh payment data
+                            const playerData: Record<string, { buyIn: boolean, ctp: boolean, skins: boolean }> = {};
+                            
+                            data.tournament.teams.forEach((team: any) => {
+                              (team.players || []).forEach((player: any) => {
+                                playerData[player.id] = {
+                                  buyIn: player.payments?.some((p: any) => p.type === 'BUY_IN' && p.status === 'PAID') || false,
+                                  ctp: player.payments?.some((p: any) => p.type === 'CTP_ENTRY' && p.status === 'PAID') || false,
+                                  skins: player.payments?.some((p: any) => p.type === 'SKINS_ENTRY' && p.status === 'PAID') || false
+                                };
+                              });
+                            });
+                            
+                            setPaymentStatuses(playerData);
+                          }
+                        } catch (error) {
+                          console.error('Error refreshing payment data:', error);
+                        } finally {
+                          setIsRefreshingPayments(false);
+                        }
+                      }}
+                      className="inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+                      disabled={isRefreshingPayments}
+                    >
+                      {isRefreshingPayments ? (
+                        <>
+                          <svg className="animate-spin -ml-0.5 mr-1.5 h-4 w-4 text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                          </svg>
+                          Refreshing...
+                        </>
+                      ) : (
+                        <>
+                          <ArrowPathIcon className="-ml-0.5 mr-1.5 h-4 w-4" />
+                          Refresh
+                        </>
+                      )}
+                    </button>
+                  </div>
+                  
+                  <div className="px-5 py-3">
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full divide-y divide-gray-200">
+                        <thead className="bg-gray-50">
+                          <tr>
+                            <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Player</th>
+                            <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Team</th>
+                            <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase">Buy-In Paid</th>
+                            <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase">CTP Opt-In</th>
+                            <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase">Skins Opt-In</th>
+                            <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="bg-white divide-y divide-gray-200">
+                          {tournament.teams.flatMap((team: any) => 
+                            (team.players || []).map((player: any) => {
+                              // Check payment statuses from state first, then from database
+                              const playerStatus = paymentStatuses[player.id] || {
+                                buyIn: player.payments?.some((p: any) => p.type === 'BUY_IN' && p.status === 'PAID') || false,
+                                ctp: player.payments?.some((p: any) => p.type === 'CTP_ENTRY' && p.status === 'PAID') || false,
+                                skins: player.payments?.some((p: any) => p.type === 'SKINS_ENTRY' && p.status === 'PAID') || false
+                              };
+                              
+                              return (
+                                <tr key={player.id}>
+                                  <td className="px-3 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                    {player.name}
+                                  </td>
+                                  <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-500">
+                                    {team.name}
+                                  </td>
+                                  <td className="px-3 py-4 whitespace-nowrap text-sm text-center">
+                                    <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${playerStatus.buyIn ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
+                                      {playerStatus.buyIn ? 'Paid' : 'Pending'}
+                                    </span>
+                                  </td>
+                                  <td className="px-3 py-4 whitespace-nowrap text-sm text-center">
+                                    {tournament.hasCTP ? (
+                                      <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${playerStatus.ctp ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
+                                        {playerStatus.ctp ? 'Opted In' : 'Not Opted In'}
+                                      </span>
+                                    ) : (
+                                      <span className="text-gray-400">N/A</span>
+                                    )}
+                                  </td>
+                                  <td className="px-3 py-4 whitespace-nowrap text-sm text-center">
+                                    {tournament.hasSkins ? (
+                                      <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${playerStatus.skins ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
+                                        {playerStatus.skins ? 'Opted In' : 'Not Opted In'}
+                                      </span>
+                                    ) : (
+                                      <span className="text-gray-400">N/A</span>
+                                    )}
+                                  </td>
+                                  <td className="px-3 py-4 whitespace-nowrap text-sm text-center">
+                                    <button
+                                      onClick={() => {
+                                        setSelectedPlayerId(player.id);
+                                        setShowPaymentModal(true);
+                                        
+                                        // Initialize player status if not already in state
+                                        if (!paymentStatuses[player.id]) {
+                                          setPaymentStatuses({
+                                            ...paymentStatuses,
+                                            [player.id]: {
+                                              buyIn: player.payments?.some((p: any) => p.type === 'BUY_IN' && p.status === 'PAID') || false,
+                                              ctp: player.payments?.some((p: any) => p.type === 'CTP_ENTRY' && p.status === 'PAID') || false,
+                                              skins: player.payments?.some((p: any) => p.type === 'SKINS_ENTRY' && p.status === 'PAID') || false
+                                            }
+                                          });
+                                        }
+                                      }}
+                                      className="inline-flex items-center rounded-md bg-primary-50 px-3 py-1.5 text-sm font-medium text-primary hover:bg-primary-100"
+                                    >
+                                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" viewBox="0 0 20 20" fill="currentColor">
+                                        <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
+                                      </svg>
+                                      Update
+                                    </button>
+                                  </td>
+                                </tr>
+                              );
+                            })
+                          )}
+
+                          {tournament.teams.flatMap((team: any) => (team.players || [])).length === 0 && (
+                            <tr>
+                              <td colSpan={6} className="px-3 py-4 text-center text-sm text-gray-500">
+                                No players added yet
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              {/* Payment Status Modal */}
+              {showPaymentModal && selectedPlayerId && (
+                <div className="fixed z-10 inset-0 overflow-y-auto">
+                  <div className="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+                    <div className="fixed inset-0 transition-opacity" aria-hidden="true">
+                      <div className="absolute inset-0 bg-gray-500 opacity-75"></div>
+                    </div>
+
+                    <span className="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
+                    
+                    <div className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
+                      <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                        <div className="sm:flex sm:items-start">
+                          <div className="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
+                            <h3 className="text-lg leading-6 font-medium text-gray-900">
+                              Update Payment Status
+                            </h3>
+                            <div className="mt-4">
+                              {(() => {
+                                const player = tournament.teams.flatMap((t: any) => t.players || []).find((p: any) => p.id === selectedPlayerId);
+                                if (!player) return null;
+                                
+                                return (
+                                  <div className="text-sm text-gray-900 mb-4">
+                                    <p className="font-semibold text-lg">{player.name}</p>
+                                    <p className="text-gray-500">Toggle payment statuses for this player</p>
+                                    
+                                    <div className="mt-6 space-y-4">
+                                      <div className="flex items-center justify-between">
+                                        <span>Tournament Buy-In (${tournament.buyIn?.toFixed(2) || "0.00"})</span>
+                                        <div>
+                                          <button 
+                                            className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${paymentStatuses[selectedPlayerId]?.buyIn ? 'bg-green-500' : 'bg-gray-200'}`}
+                                            onClick={() => {
+                                              const newStatuses = {...paymentStatuses};
+                                              if (!newStatuses[selectedPlayerId]) {
+                                                newStatuses[selectedPlayerId] = {
+                                                  buyIn: false,
+                                                  ctp: false,
+                                                  skins: false
+                                                };
+                                              }
+                                              newStatuses[selectedPlayerId].buyIn = !newStatuses[selectedPlayerId].buyIn;
+                                              setPaymentStatuses(newStatuses);
+                                            }}
+                                          >
+                                            <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${paymentStatuses[selectedPlayerId]?.buyIn ? 'translate-x-5' : 'translate-x-0'}`}></span>
+                                          </button>
+                                        </div>
+                                      </div>
+                                      
+                                      {tournament.hasCTP && (
+                                        <div className="flex items-center justify-between">
+                                          <span>CTP Entry</span>
+                                          <div>
+                                            <button 
+                                              className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${paymentStatuses[selectedPlayerId]?.ctp ? 'bg-green-500' : 'bg-gray-200'}`}
+                                              onClick={() => {
+                                                const newStatuses = {...paymentStatuses};
+                                                if (!newStatuses[selectedPlayerId]) {
+                                                  newStatuses[selectedPlayerId] = {
+                                                    buyIn: false,
+                                                    ctp: false,
+                                                    skins: false
+                                                  };
+                                                }
+                                                newStatuses[selectedPlayerId].ctp = !newStatuses[selectedPlayerId].ctp;
+                                                setPaymentStatuses(newStatuses);
+                                              }}
+                                            >
+                                              <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${paymentStatuses[selectedPlayerId]?.ctp ? 'translate-x-5' : 'translate-x-0'}`}></span>
+                                            </button>
+                                          </div>
+                                        </div>
+                                      )}
+                                      
+                                      {tournament.hasSkins && (
+                                        <div className="flex items-center justify-between">
+                                          <span>Skins Entry</span>
+                                          <div>
+                                            <button 
+                                              className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${paymentStatuses[selectedPlayerId]?.skins ? 'bg-green-500' : 'bg-gray-200'}`}
+                                              onClick={() => {
+                                                const newStatuses = {...paymentStatuses};
+                                                if (!newStatuses[selectedPlayerId]) {
+                                                  newStatuses[selectedPlayerId] = {
+                                                    buyIn: false,
+                                                    ctp: false,
+                                                    skins: false
+                                                  };
+                                                }
+                                                newStatuses[selectedPlayerId].skins = !newStatuses[selectedPlayerId].skins;
+                                                setPaymentStatuses(newStatuses);
+                                              }}
+                                            >
+                                              <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${paymentStatuses[selectedPlayerId]?.skins ? 'translate-x-5' : 'translate-x-0'}`}></span>
+                                            </button>
+                                          </div>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                );
+                              })()}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+                        <button 
+                          type="button" 
+                          className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-primary text-base font-medium text-white hover:bg-primary-dark focus:outline-none sm:ml-3 sm:w-auto sm:text-sm"
+                          onClick={async () => {
+                            try {
+                              setIsRefreshingPayments(true);
+                              // Save to database
+                              const playerStatus = paymentStatuses[selectedPlayerId];
+                              if (playerStatus) {
+                                const response = await axios.post('/api/players/payment-status', {
+                                  playerId: selectedPlayerId,
+                                  tournamentId: id,
+                                  buyIn: playerStatus.buyIn,
+                                  ctp: playerStatus.ctp,
+                                  skins: playerStatus.skins
+                                });
+                                
+                                if (response.data.success) {
+                                  // Close modal on success
+                                  setShowPaymentModal(false);
+                                  setSelectedPlayerId(null);
+                                  
+                                  // Refresh tournament data
+                                  try {
+                                    const { data } = await axios.get(`/api/tournaments/${id}`);
+                                    if (data?.tournament) {
+                                      // Manually refresh the data in the current state
+                                      const updatedPlayerStatuses = {...paymentStatuses};
+                                      
+                                      data.tournament.teams.forEach((team: any) => {
+                                        (team.players || []).forEach((player: any) => {
+                                          if (updatedPlayerStatuses[player.id]) {
+                                            updatedPlayerStatuses[player.id] = {
+                                              buyIn: player.payments?.some((p: any) => p.type === 'BUY_IN' && p.status === 'PAID') || false,
+                                              ctp: player.payments?.some((p: any) => p.type === 'CTP_ENTRY' && p.status === 'PAID') || false,
+                                              skins: player.payments?.some((p: any) => p.type === 'SKINS_ENTRY' && p.status === 'PAID') || false
+                                            };
+                                          }
+                                        });
+                                      });
+                                      
+                                      setPaymentStatuses(updatedPlayerStatuses);
+                                    }
+                                  } catch (refreshError) {
+                                    console.error('Error refreshing tournament data:', refreshError);
+                                  }
+                                }
+                              }
+                            } catch (error) {
+                              console.error('Error updating payment status:', error);
+                              alert('Failed to update payment status. Please try again.');
+                            } finally {
+                              setIsRefreshingPayments(false);
+                            }
+                          }}
+                        >
+                          Save Changes
+                        </button>
+                        <button 
+                          type="button" 
+                          className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm"
+                          onClick={() => {
+                            setShowPaymentModal(false);
+                            setSelectedPlayerId(null);
+                          }}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Player Financial Summary */}
+              <div className="mt-8">
+                <div className="bg-white overflow-hidden shadow rounded-lg">
+                  <div className="px-5 py-4 border-b border-gray-200">
+                    <h3 className="text-base font-semibold text-gray-900">Player Financial Summary</h3>
+                  </div>
+                  
+                  <div className="px-5 py-3">
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full divide-y divide-gray-200">
+                        <thead className="bg-gray-50">
+                          <tr>
+                            <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Player</th>
+                            <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Team</th>
+                            <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Buy-In</th>
+                            <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">CTP Winnings</th>
+                            <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Skins Winnings</th>
+                            <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total Earned</th>
+                            <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Net</th>
+                          </tr>
+                        </thead>
+                        <tbody className="bg-white divide-y divide-gray-200">
+                          {tournament.teams.flatMap((team: any) => 
+                            (team.players || []).map((player: any) => {
+                              // Calculate buy-in
+                              const buyIn = tournament.buyIn || 0;
+                              
+                              // Calculate CTP winnings
+                              const ctpWinnings = tournament.ctpResults
+                                ? tournament.ctpResults
+                                    .filter((ctp: any) => ctp.playerId === player.id)
+                                    .reduce((sum: number, ctp: any) => sum + (ctp.prize || 0), 0)
+                                : 0;
+                              
+                              // Calculate Skins winnings
+                              const skinsWinnings = tournament.skinsResults
+                                ? tournament.skinsResults
+                                    .filter((skin: any) => skin.playerId === player.id)
+                                    .reduce((sum: number, skin: any) => sum + (skin.prize || 0), 0)
+                                : 0;
+                              
+                              // Calculate total earned and net
+                              const totalEarned = ctpWinnings + skinsWinnings;
+                              const net = totalEarned - buyIn;
+                              
+                              return (
+                                <tr key={player.id}>
+                                  <td className="px-3 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                    {player.name}
+                                  </td>
+                                  <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-500">
+                                    {team.name}
+                                  </td>
+                                  <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-500">
+                                    ${buyIn.toFixed(2)}
+                                  </td>
+                                  <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-500">
+                                    ${ctpWinnings.toFixed(2)}
+                                  </td>
+                                  <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-500">
+                                    ${skinsWinnings.toFixed(2)}
+                                  </td>
+                                  <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-900">
+                                    ${totalEarned.toFixed(2)}
+                                  </td>
+                                  <td className="px-3 py-4 whitespace-nowrap text-sm font-medium">
+                                    <span className={net >= 0 ? 'text-green-600' : 'text-red-600'}>
+                                      ${net.toFixed(2)}
+                                    </span>
+                                  </td>
+                                </tr>
+                              );
+                            })
+                          )}
+
+                          {tournament.teams.flatMap((team: any) => (team.players || [])).length === 0 && (
+                            <tr>
+                              <td colSpan={7} className="px-3 py-4 text-center text-sm text-gray-500">
+                                No players added yet
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           )}

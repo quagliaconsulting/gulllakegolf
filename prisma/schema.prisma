@@ -14,6 +14,13 @@ model Tournament {
   location          String
   startDate         DateTime
   endDate           DateTime
+  buyIn             Float?             // Buy-in amount per player
+  totalPrize        Float?             // Total prize pool
+  hasCTP            Boolean            @default(false) // Whether tournament has Closest to Pin competition
+  ctpPrizeAmount    Float?             // CTP prize amount
+  hasSkins          Boolean            @default(false) // Whether tournament has Skins game
+  skinsPrizeAmount  Float?             // Skins prize amount
+  payoutStructure   Json?              // JSON describing payout percentages
   createdAt         DateTime           @default(now())
   updatedAt         DateTime           @updatedAt
   accommodations    Accommodation[]
@@ -24,18 +31,22 @@ model Tournament {
   reports           Report[]
   schedules         Schedule[]
   teams             Team[]
+  payments          PlayerPayment[]
+  ctpResults        CTPResult[]
+  skinsResults      SkinsResult[]
 }
 
 model Team {
   id           String     @id @default(uuid())
   name         String
   tournamentId String
+  metadata     Json?      // Added to store home/away designation and other metadata
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
   awayTeam     Match[]    @relation("AwayTeam")
   homeTeam     Match[]    @relation("HomeTeam")
   players      Player[]
-  tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  tournament   Tournament @relation(fields: [tournamentId], references: [id])
 }
 
 model Player {
@@ -52,6 +63,9 @@ model Player {
   accommodation   Accommodation?  @relation(fields: [accommodationId], references: [id])
   team            Team            @relation(fields: [teamId], references: [id], onDelete: Cascade)
   playerPairings  PlayerPairing[] @relation("PlayerInPairing")
+  payments        PlayerPayment[]
+  ctpWins         CTPResult[]
+  skinsWins       SkinsResult[]
 }
 
 model Course {
@@ -60,7 +74,7 @@ model Course {
   tournamentId String
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
-  tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  tournament   Tournament @relation(fields: [tournamentId], references: [id])
   holes        Hole[]
   matches      Match[]
 }
@@ -71,11 +85,13 @@ model Hole {
   par         Int
   handicap    Int
   distance    Int
+  isPar3      Boolean      @default(false)  // Flag for par-3 holes (potential CTP holes)
   courseId    String
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
   course      Course       @relation(fields: [courseId], references: [id], onDelete: Cascade)
   holeResults HoleResult[]
+  ctpResults  CTPResult[]
 }
 
 model Accommodation {
@@ -85,7 +101,7 @@ model Accommodation {
   tournamentId String
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
-  tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  tournament   Tournament @relation(fields: [tournamentId], references: [id])
   players      Player[]
 }
 
@@ -93,35 +109,39 @@ model FormatMultiplier {
   id            String     @id @default(uuid())
   formatName    String
   multiplier    Float
+  points        Float      @default(1.0)  // Points awarded for winning a match in this format
+  halfPoints    Float?     // Points awarded for tieing a match in this format (typically half of points)
   tournamentId  String
   createdAt     DateTime   @default(now())
   updatedAt     DateTime   @updatedAt
   isFourManTeam Boolean    @default(false)
-  tournament    Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  tournament    Tournament @relation(fields: [tournamentId], references: [id])
   matches       Match[]
 }
 
 model Match {
-  id             String           @id @default(uuid())
-  tournamentId   String
-  scheduleId     String
-  formatId       String
-  homeTeamId     String
-  awayTeamId     String
-  courseId       String
-  startingHole   Int
-  teeTime        DateTime
-  createdAt      DateTime         @default(now())
-  updatedAt      DateTime         @updatedAt
-  holeResults    HoleResult[]
-  awayTeam       Team             @relation("AwayTeam", fields: [awayTeamId], references: [id])
-  course         Course           @relation(fields: [courseId], references: [id])
-  format         FormatMultiplier @relation(fields: [formatId], references: [id])
-  homeTeam       Team             @relation("HomeTeam", fields: [homeTeamId], references: [id])
-  schedule       Schedule         @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
-  tournament     Tournament       @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
-  points         MatchPoints?
-  playerPairings PlayerPairing[]
+  id                  String           @id @default(uuid())
+  tournamentId        String
+  scheduleId          String
+  formatId            String
+  homeTeamId          String
+  awayTeamId          String
+  courseId            String
+  startingHole        Int
+  teeTime             DateTime
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+  foursomeGroupId     String?          // ID to group Singles matches into foursomes
+  playerToPlayerMatch Boolean          @default(false) // Flag to identify Singles matches as 1v1 player matchups
+  holeResults         HoleResult[]
+  awayTeam            Team             @relation("AwayTeam", fields: [awayTeamId], references: [id])
+  course              Course           @relation(fields: [courseId], references: [id])
+  format              FormatMultiplier @relation(fields: [formatId], references: [id])
+  homeTeam            Team             @relation("HomeTeam", fields: [homeTeamId], references: [id])
+  schedule            Schedule         @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  tournament          Tournament       @relation(fields: [tournamentId], references: [id])
+  points              MatchPoints?
+  playerPairings      PlayerPairing[]
 }
 
 model PlayerPairing {
@@ -146,6 +166,7 @@ model HoleResult {
   homeTeamNetScore   Float?
   awayTeamNetScore   Float?
   winnerTeamId       String?
+  isSkin             Boolean  @default(false)  // Flag if this hole result is a skin
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
   hole               Hole     @relation(fields: [holeId], references: [id])
@@ -172,7 +193,7 @@ model Schedule {
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
   matches      Match[]
-  tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  tournament   Tournament @relation(fields: [tournamentId], references: [id])
 }
 
 model GalleryPhoto {
@@ -186,7 +207,7 @@ model GalleryPhoto {
   tournamentId String
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
-  tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  tournament   Tournament @relation(fields: [tournamentId], references: [id])
 }
 
 model Report {
@@ -199,7 +220,7 @@ model Report {
   tournamentId String
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
-  tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  tournament   Tournament @relation(fields: [tournamentId], references: [id])
 }
 
 model User {
@@ -217,4 +238,68 @@ enum UserRole {
   TEAM_CAPTAIN
   PLAYER
   SPECTATOR
+}
+
+// New models for the financial tracking system
+
+model PlayerPayment {
+  id           String     @id @default(uuid())
+  tournamentId String
+  playerId     String
+  amount       Float
+  type         PaymentType
+  status       PaymentStatus @default(PENDING)
+  notes        String?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  tournament   Tournament @relation(fields: [tournamentId], references: [id])
+  player       Player     @relation(fields: [playerId], references: [id], onDelete: Cascade)
+}
+
+enum PaymentType {
+  BUY_IN
+  CTP_ENTRY
+  SKINS_ENTRY
+  PRIZE_PAYOUT
+  CTP_PAYOUT
+  SKINS_PAYOUT
+  OTHER
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  RECEIVED
+  REFUNDED
+}
+
+model CTPResult {
+  id           String     @id @default(uuid())
+  tournamentId String
+  holeId       String
+  playerId     String
+  distance     Float?     // Distance in feet/inches from the hole
+  round        Int        @default(1)  // Tournament round number
+  prize        Float?
+  paid         Boolean    @default(false)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  tournament   Tournament @relation(fields: [tournamentId], references: [id])
+  hole         Hole       @relation(fields: [holeId], references: [id])
+  player       Player     @relation(fields: [playerId], references: [id])
+}
+
+model SkinsResult {
+  id           String     @id @default(uuid())
+  tournamentId String
+  playerId     String
+  matchId      String?
+  holeNumber   Int
+  score        Int
+  prize        Float?
+  paid         Boolean    @default(false)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  tournament   Tournament @relation(fields: [tournamentId], references: [id])
+  player       Player     @relation(fields: [playerId], references: [id])
 }

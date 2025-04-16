@@ -1,0 +1,4 @@
+during tournament creation and for the dashboard money section the totals are right but it doesnt appear to be for the new money tab, the total prize pool says Not set, no sure why, the ctp      │
+│   prizes show $30 but they should be the buy in per player specified during creation divided by the number of par threes in the assigned courses.  the Skins prizes should be the total number of    │
+│   skins per player.  the team payout prize structure needs to only show 2 teams if there are only 2.  how can i manage who has paid, opted in for ctp or skins on a tournament by tournament basis   │
+│   as well. 

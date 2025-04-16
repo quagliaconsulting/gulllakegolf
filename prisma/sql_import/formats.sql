@@ -1,0 +1,10 @@
+-- FormatMultiplier table
+TRUNCATE TABLE "FormatMultiplier" CASCADE;
+INSERT INTO "FormatMultiplier" 
+  (id, "formatName", multiplier, "tournamentId", "createdAt", "updatedAt", "isFourManTeam", points, "halfPoints")
+VALUES
+  ('3d04ece8-d63c-43d0-9f44-35eb40af8a99', 'Best Ball', 1.0, '6b5eaadf-9d01-4f1a-b3ba-da96688aafc2', '2025-04-15 02:25:52.536000', '2025-04-15 02:25:52.536000', false, 1.0, 0.5),
+  ('df36a47b-7b3d-4748-bd8c-017271ec01c4', 'Scramble', 0.4, '6b5eaadf-9d01-4f1a-b3ba-da96688aafc2', '2025-04-15 02:25:52.536000', '2025-04-15 02:25:52.536000', false, 1.0, 0.5),
+  ('dae07937-9074-419e-9939-2c90f38de8b0', 'Alternate Shot', 0.7, '6b5eaadf-9d01-4f1a-b3ba-da96688aafc2', '2025-04-15 02:25:52.536000', '2025-04-15 02:25:52.536000', false, 1.0, 0.5),
+  ('8bc355e6-a594-4572-a1b4-afb5e9938b39', 'Chapman', 0.6, '6b5eaadf-9d01-4f1a-b3ba-da96688aafc2', '2025-04-15 02:25:52.536000', '2025-04-15 02:25:52.536000', false, 1.0, 0.5),
+  ('a1f34fa4-1f86-40a3-bc0b-d02c515d071f', 'Singles', 1.0, '6b5eaadf-9d01-4f1a-b3ba-da96688aafc2', '2025-04-15 04:13:22.758000', '2025-04-15 04:13:22.758000', false, 1.0, 0.5);

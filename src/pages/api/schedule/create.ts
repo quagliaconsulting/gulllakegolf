@@ -58,6 +58,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       for (const match of matches) {
         // Find or create the format multiplier
         let formatId;
+        let isSinglesFormat = false;
         
         const existingFormat = await prisma.formatMultiplier.findFirst({
           where: {
@@ -68,6 +69,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         
         if (existingFormat) {
           formatId = existingFormat.id;
+          isSinglesFormat = existingFormat.formatName === 'Singles';
         } else {
           // Default multipliers based on format
           let multiplier = 1.0; // Default for Best Ball and Singles
@@ -75,6 +77,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           
           if (match.format === 'Singles') {
             multiplier = 1.0;
+            isSinglesFormat = true;
           } else if (match.format === 'Scramble') {
             multiplier = 0.4;
           } else if (match.format === 'Alternate Shot') {
@@ -118,32 +121,96 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           }
         }
         
-        // Create the match
-        const matchData: any = {
-          tournamentId,
-          scheduleId: schedule.id,
-          formatId,
-          courseId: match.courseId,
-          startingHole: match.startingHole || 1,
-          // Use UTC format for tee time to avoid timezone issues
-          teeTime: new Date(`${date}T${match.time}:00Z`),
-        };
-        
-        // Only include team IDs if they exist
-        if (homeTeamId) matchData.homeTeamId = homeTeamId;
-        if (awayTeamId) matchData.awayTeamId = awayTeamId;
-        
-        const createdMatch = await prisma.match.create({
-          data: matchData,
-          include: {
-            format: true,
-            course: true,
-            homeTeam: true,
-            awayTeam: true,
-          },
-        });
-        
-        createdMatches.push(createdMatch);
+        // For Singles format, we need to create a placeholder match first
+        // and later it will be used as a container for foursome grouping
+        if (isSinglesFormat) {
+          // Generate a unique foursome group ID
+          const foursomeGroupId = `foursome_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+          
+          // Get team metadata to properly set home/away teams
+          let homeTeamData = null;
+          let awayTeamData = null;
+          
+          if (homeTeamId && awayTeamId) {
+            [homeTeamData, awayTeamData] = await Promise.all([
+              prisma.team.findUnique({ where: { id: homeTeamId } }),
+              prisma.team.findUnique({ where: { id: awayTeamId } })
+            ]);
+          }
+          
+          // Create a placeholder match to represent the foursome
+          const matchData: any = {
+            tournamentId,
+            scheduleId: schedule.id,
+            formatId,
+            courseId: match.courseId,
+            startingHole: match.startingHole || 1,
+            // Use UTC format for tee time to avoid timezone issues
+            // Keep time as specified without timezone conversion
+            teeTime: new Date(`${date}T${match.time}:00.000Z`),
+            foursomeGroupId,
+            playerToPlayerMatch: false // This is the container match
+          };
+          
+          // Only include team IDs if they exist
+          if (homeTeamId) matchData.homeTeamId = homeTeamId;
+          if (awayTeamId) matchData.awayTeamId = awayTeamId;
+          
+          const createdMatch = await prisma.match.create({
+            data: matchData,
+            include: {
+              format: true,
+              course: true,
+              homeTeam: true,
+              awayTeam: true,
+            },
+          });
+          
+          createdMatches.push(createdMatch);
+          
+          // Note: We don't create individual player-vs-player matches yet
+          // because we don't know which players will be assigned
+          // The player assignment screen will handle creating the actual 1v1 matches
+        } else {
+          // For non-Singles formats, create match as usual
+          // Get team metadata to properly set home/away teams
+          let homeTeamData = null;
+          let awayTeamData = null;
+          
+          if (homeTeamId && awayTeamId) {
+            [homeTeamData, awayTeamData] = await Promise.all([
+              prisma.team.findUnique({ where: { id: homeTeamId } }),
+              prisma.team.findUnique({ where: { id: awayTeamId } })
+            ]);
+          }
+          
+          const matchData: any = {
+            tournamentId,
+            scheduleId: schedule.id,
+            formatId,
+            courseId: match.courseId,
+            startingHole: match.startingHole || 1,
+            // Use UTC format for tee time to avoid timezone issues
+            // Keep time as specified without timezone conversion
+            teeTime: new Date(`${date}T${match.time}:00.000Z`),
+          };
+          
+          // Only include team IDs if they exist
+          if (homeTeamId) matchData.homeTeamId = homeTeamId;
+          if (awayTeamId) matchData.awayTeamId = awayTeamId;
+          
+          const createdMatch = await prisma.match.create({
+            data: matchData,
+            include: {
+              format: true,
+              course: true,
+              homeTeam: true,
+              awayTeam: true,
+            },
+          });
+          
+          createdMatches.push(createdMatch);
+        }
       }
       
       return res.status(201).json({

@@ -87,8 +87,12 @@ export default async function handler(
               id: match.id,
               format: match.format.formatName,
               formatMultiplier: match.format.multiplier,
+              formatPoints: match.format.points || 0,
+              formatHalfPoints: match.format.halfPoints || 0,
               homeTeam: match.homeTeam.name,
+              homeTeamIsReal: match.homeTeam.metadata?.isHomeTeam || false,
               awayTeam: match.awayTeam.name,
+              awayTeamIsReal: match.awayTeam.metadata?.isHomeTeam || false,
               time: match.teeTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
               course: match.course.name,
               startingHole: match.startingHole,
@@ -134,15 +138,26 @@ export default async function handler(
         endDate.setUTCHours(12, 0, 0, 0);
       }
       
+      // Prepare data with possible type assertions
+      const updateFields: any = {
+        name: updateData.name,
+        year: updateData.year,
+        location: updateData.location,
+        startDate: startDate,
+        endDate: endDate,
+        // Financial fields
+        buyIn: updateData.buyIn,
+        totalPrize: updateData.totalPrize,
+        hasCTP: updateData.hasCTP,
+        ctpPrizeAmount: updateData.ctpPrizeAmount,
+        hasSkins: updateData.hasSkins,
+        skinsPrizeAmount: updateData.skinsPrizeAmount,
+        payoutStructure: updateData.payoutStructure,
+      };
+      
       const tournament = await prisma.tournament.update({
         where: { id },
-        data: {
-          name: updateData.name,
-          year: updateData.year,
-          location: updateData.location,
-          startDate: startDate,
-          endDate: endDate,
-        },
+        data: updateFields,
         include: {
           teams: true,
           courses: true,
@@ -157,10 +172,33 @@ export default async function handler(
     }
   } else if (req.method === 'DELETE') {
     try {
-      // Delete tournament and all related data (cascade delete configured in schema)
-      await prisma.tournament.delete({
-        where: { id },
-      });
+      // First delete all associated items that we want to remove with the tournament
+      await prisma.$transaction([
+        // Delete match-related data
+        prisma.matchPoints.deleteMany({ 
+          where: { match: { tournamentId: id } } 
+        }),
+        prisma.holeResult.deleteMany({ 
+          where: { match: { tournamentId: id } } 
+        }),
+        prisma.playerPairing.deleteMany({ 
+          where: { match: { tournamentId: id } } 
+        }),
+        prisma.match.deleteMany({ 
+          where: { tournamentId: id } 
+        }),
+        
+        // Delete tournament-specific data
+        prisma.schedule.deleteMany({ where: { tournamentId: id } }),
+        prisma.galleryPhoto.deleteMany({ where: { tournamentId: id } }),
+        prisma.report.deleteMany({ where: { tournamentId: id } }),
+        prisma.playerPayment.deleteMany({ where: { tournamentId: id } }),
+        prisma.cTPResult.deleteMany({ where: { tournamentId: id } }),
+        prisma.skinsResult.deleteMany({ where: { tournamentId: id } }),
+        
+        // Delete the tournament itself
+        prisma.tournament.delete({ where: { id } })
+      ]);
       
       res.status(200).json({ message: 'Tournament deleted successfully' });
     } catch (error) {
