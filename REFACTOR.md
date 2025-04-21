@@ -22,7 +22,7 @@
 ## Phase 3: State Management and Data Flow
 - [x] Centralize SWR configurations and cache management
 - [ ] Implement proper request/response types for API calls
-- [ ] Remove debug code and console.logs
+- [x] Remove debug code and console.logs
 - [ ] Create proper data validation layer
 
 ## Phase 4: Authentication Consolidation
@@ -121,8 +121,15 @@ src/
    - Improved code organization with clear separation of concerns
    - Enhanced type safety with proper interfaces
 
+8. **Service Layer Expansion and Debugging Improvements (April 22, 2025)**
+   - Implemented TournamentService for tournament operations
+   - Created centralized logger for consistent logging patterns
+   - Added methods for tournament CRUD, scheduling, and leaderboards
+   - Prepared groundwork for API route refactoring
+   - Improved database access patterns with proper error handling
+
 ### Next Steps
 - Continue refactoring other large pages (players.tsx, tournaments/new.tsx)
-- Clean up debug code and console.logs
-- Implement TournamentService and other domain services
+- Refactor tournament API routes to use TournamentService
+- Implement PlayerService and ScheduleService
 - Improve type safety and add API request/response types
