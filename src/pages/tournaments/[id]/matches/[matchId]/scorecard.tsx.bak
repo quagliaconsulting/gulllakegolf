@@ -194,8 +194,8 @@ export default function ScorecardView() {
         formatFromUI: data.match.format,
         playerToPlayerMatch: data.match.playerToPlayerMatch,
         foursomeGroupId: data.match.foursomeGroupId,
-        homePlayersLength: homePlayers.length,
-        awayPlayersLength: awayPlayers.length,
+        homePlayersLength: playersData?.homePlayers?.length,
+        awayPlayersLength: playersData?.awayPlayers?.length,
         shouldShowFrontNine: shouldShowFrontNine(),
         shouldShowBackNine: shouldShowBackNine()
       });
@@ -340,13 +340,13 @@ export default function ScorecardView() {
 
     // Check if this is a singles or best ball match with individual player scores
     if ((match.format.toLowerCase().includes('singles') || match.format.toLowerCase().includes('best ball')) &&
-        homePlayers.length > 0 && awayPlayers.length > 0) {
+        playersData?.homePlayers?.length > 0 && playersData?.awayPlayers?.length > 0) {
 
       // Get all player scores for this hole
       const playerScores: {playerId: string, name: string, gross: number, team: string}[] = [];
       
       // Add home player scores
-      homePlayers.forEach((player: Player, idx: number) => {
+      playersData.homePlayers.forEach((player: Player, idx: number) => {
         const grossScore = scores[`home-${idx}-${hole.number}`] !== undefined
           ? scores[`home-${idx}-${hole.number}`]
           : hole[`home-${idx}-gross`]; // Try player specific gross first
@@ -362,7 +362,7 @@ export default function ScorecardView() {
       });
       
       // Add away player scores
-      awayPlayers.forEach((player: Player, idx: number) => {
+      playersData.awayPlayers.forEach((player: Player, idx: number) => {
         const grossScore = scores[`away-${idx}-${hole.number}`] !== undefined
           ? scores[`away-${idx}-${hole.number}`]
           : hole[`away-${idx}-gross`]; // Try player specific gross first
@@ -392,16 +392,16 @@ export default function ScorecardView() {
             const holeScores: number[] = [];
 
             // Get scores from home players
-            if (homePlayers.length > 0) {
-              homePlayers.forEach((_: Player, idx: number) => {
+            if (playersData?.homePlayers) {
+              playersData.homePlayers.forEach((_: Player, idx: number) => {
                 const score = h[`home-${idx}-gross`] !== undefined ? h[`home-${idx}-gross`] : h.homeGross;
                 if (score !== null && score !== undefined) holeScores.push(score);
               });
             }
 
             // Get scores from away players
-            if (awayPlayers.length > 0) {
-              awayPlayers.forEach((_: Player, idx: number) => {
+            if (playersData?.awayPlayers) {
+              playersData.awayPlayers.forEach((_: Player, idx: number) => {
                 const score = h[`away-${idx}-gross`] !== undefined ? h[`away-${idx}-gross`] : h.awayGross;
                 if (score !== null && score !== undefined) holeScores.push(score);
               });
@@ -416,7 +416,7 @@ export default function ScorecardView() {
         // If one player has the unique lowest score and it's a skin, return the player
         if (lowestScorePlayers.length === 1 && isLowestForPar) {
           // Find the full player object to return
-          const winningPlayer = [...homePlayers, ...awayPlayers].find((p: Player) => p.id === lowestScorePlayers[0].playerId);
+          const winningPlayer = [...(playersData.homePlayers || []), ...(playersData.awayPlayers || [])].find((p: Player) => p.id === lowestScorePlayers[0].playerId);
           if (winningPlayer) {
             return {
               ...winningPlayer,
@@ -470,7 +470,7 @@ export default function ScorecardView() {
     
     setSkinsModalData({
       holeNumber: hole.number,
-      playerId: (skin && typeof skin === 'object' && 'playerId' in skin) ? skin.playerId as string : '', // Check if skin has playerId
+      playerId: (skin && 'playerId' in skin) ? skin.playerId : '', // Check if skin has playerId
       score: (hole.homeGross !== null && hole.awayGross !== null && hole.homeGross < hole.awayGross) ? hole.homeGross : hole.awayGross ?? 0 // Handle null possibility
     });
     setShowSkinsModal(true);
@@ -548,16 +548,16 @@ export default function ScorecardView() {
 
       // Check if it's a player skin
       if (autoSkin && 'playerId' in autoSkin) {
-        const player = [...homePlayers, ...awayPlayers].find((p: Player) => p.id === autoSkin.playerId);
+        const player = [...(playersData.homePlayers || []), ...(playersData.awayPlayers || [])].find((p: Player) => p.id === autoSkin.playerId);
         if (player) {
           return player;
         }
       } else if (autoSkin && 'team' in autoSkin) {
         // For team skin, return the team captain or first player
-        if (autoSkin.team === 'home' && homePlayers.length > 0) {
-          return homePlayers.length > 0 ? homePlayers[0] : null;
-        } else if (autoSkin.team === 'away' && awayPlayers.length > 0) {
-          return awayPlayers.length > 0 ? awayPlayers[0] : null;
+        if (autoSkin.team === 'home' && playersData?.homePlayers?.length > 0) {
+          return playersData.homePlayers[0];
+        } else if (autoSkin.team === 'away' && playersData?.awayPlayers?.length > 0) {
+          return playersData.awayPlayers[0];
         }
       }
     }
@@ -709,12 +709,6 @@ export default function ScorecardView() {
   if (!data?.match) {
     return <div className="p-8 text-center">Match not found</div>;
   }
-  
-  // Ensure we have player data to avoid TypeScript errors
-  const homePlayers = playersData?.homePlayers || [];
-  const awayPlayers = playersData?.awayPlayers || [];
-  const hasHomePlayers = homePlayers.length > 0;
-  const hasAwayPlayers = awayPlayers.length > 0;
 
   const match = data.match;
   const frontNine = getFrontNine();
@@ -769,7 +763,7 @@ export default function ScorecardView() {
             <div className="mt-1 text-xs text-gray-50 bg-blue-900 p-1 rounded">
               {match.playerToPlayerMatch ? (
                 <p>
-                  <strong>Singles Match:</strong> {homePlayers.length === 1 ? homePlayers[0]?.name : 'No home player'} vs {awayPlayers.length === 1 ? awayPlayers[0]?.name : 'No away player'}
+                  <strong>Singles Match:</strong> {playersData?.homePlayers?.length === 1 ? playersData.homePlayers[0]?.name : 'No home player'} vs {playersData?.awayPlayers?.length === 1 ? playersData.awayPlayers[0]?.name : 'No away player'}
                 </p>
               ) : (
                 <p><strong>Team Match:</strong> {match.format}</p>
@@ -785,7 +779,7 @@ export default function ScorecardView() {
                 Starting Hole: {match.startingHole},
                 Format Type: {match.format}
               </p>
-              <p className="mt-1">DEBUG - Home players: {homePlayers.length || 0}, Away players: {awayPlayers.length || 0}</p>
+              <p className="mt-1">DEBUG - Home players: {playersData?.homePlayers?.length || 0}, Away players: {playersData?.awayPlayers?.length || 0}</p>
               <p className="mt-1">DEBUG - Player Names: 
                 Home: {playersData?.homePlayers?.map((p: Player) => p.name).join(', ') || 'N/A'} | 
                 Away: {playersData?.awayPlayers?.map((p: Player) => p.name).join(', ') || 'N/A'}
@@ -855,13 +849,13 @@ export default function ScorecardView() {
                   data.match.holes.forEach((hole: any) => {
                     if (match.format.toLowerCase().includes('singles') || match.format.toLowerCase().includes('best ball')) {
                       // For singles or best ball, generate scores for each player
-                      if (homePlayers.length > 0) {
-                        homePlayers.forEach((player: any, idx: number) => {
+                      if (playersData?.homePlayers) {
+                        playersData.homePlayers.forEach((player: any, idx: number) => {
                           randomScores[`home-${idx}-${hole.number}`] = getRandomScore(hole.par);
                         });
                       }
-                      if (awayPlayers.length > 0) {
-                        awayPlayers.forEach((player: any, idx: number) => {
+                      if (playersData?.awayPlayers) {
+                        playersData.awayPlayers.forEach((player: any, idx: number) => {
                           randomScores[`away-${idx}-${hole.number}`] = getRandomScore(hole.par);
                         });
                       }
@@ -972,22 +966,22 @@ export default function ScorecardView() {
                 {data?.match?.homeTeamIsReal === true ? "Home Team" : "Away Team"}
               </span>
               <span className={`text-base font-semibold ${data?.match?.homeTeamIsReal === true ? "text-emerald-700" : "text-blue-600"}`}>
-                {match.playerToPlayerMatch && match.format.toLowerCase().includes('singles') && homePlayers.length === 1 
-                  ? `${homePlayers[0].name} (${match.homeTeam})` 
+                {match.playerToPlayerMatch && match.format.toLowerCase().includes('singles') && playersData?.homePlayers?.length === 1 
+                  ? `${playersData.homePlayers[0].name} (${match.homeTeam})` 
                   : match.homeTeam}
               </span>
               {!match.isFourManTeam && (
                 <span className="text-sm text-gray-500">
-                  Handicap: {match.playerToPlayerMatch && match.format.toLowerCase().includes('singles') && homePlayers.length === 1 
-                    ? (homePlayers[0].handicapIndex * match.formatMultiplier).toFixed(1) 
+                  Handicap: {match.playerToPlayerMatch && match.format.toLowerCase().includes('singles') && playersData?.homePlayers?.length === 1 
+                    ? (playersData.homePlayers[0].handicapIndex * match.formatMultiplier).toFixed(1) 
                     : match.homeTeamHandicap.toFixed(1)}
                 </span>
               )}
-              {homePlayers.length > 0 && (
+              {playersData?.homePlayers && (
                 <div className="mt-1">
                   <span className="text-xs font-medium text-gray-500">Players:</span>
                   <ul className="text-xs text-gray-600">
-                    {homePlayers.map((player: any) => (
+                    {playersData.homePlayers.map((player: any) => (
                       <li key={player.id}>{player.name} (HCP: {player.handicapIndex})</li>
                     ))}
                   </ul>
@@ -1018,22 +1012,22 @@ export default function ScorecardView() {
                 {data?.match?.awayTeamIsReal === true ? "Home Team" : "Away Team"}
               </span>
               <span className={`text-base font-semibold ${data?.match?.awayTeamIsReal === true ? "text-emerald-700" : "text-blue-600"}`}>
-                {match.playerToPlayerMatch && match.format.toLowerCase().includes('singles') && awayPlayers.length === 1 
-                  ? `${awayPlayers[0].name} (${match.awayTeam})` 
+                {match.playerToPlayerMatch && match.format.toLowerCase().includes('singles') && playersData?.awayPlayers?.length === 1 
+                  ? `${playersData.awayPlayers[0].name} (${match.awayTeam})` 
                   : match.awayTeam}
               </span>
               {!match.isFourManTeam && (
                 <span className="text-sm text-gray-500">
-                  Handicap: {match.playerToPlayerMatch && match.format.toLowerCase().includes('singles') && awayPlayers.length === 1 
-                    ? (awayPlayers[0].handicapIndex * match.formatMultiplier).toFixed(1) 
+                  Handicap: {match.playerToPlayerMatch && match.format.toLowerCase().includes('singles') && playersData?.awayPlayers?.length === 1 
+                    ? (playersData.awayPlayers[0].handicapIndex * match.formatMultiplier).toFixed(1) 
                     : match.awayTeamHandicap.toFixed(1)}
                 </span>
               )}
-              {awayPlayers.length > 0 && (
+              {playersData?.awayPlayers && (
                 <div className="mt-1">
                   <span className="text-xs font-medium text-gray-500">Players:</span>
                   <ul className="text-xs text-gray-600">
-                    {awayPlayers.map((player: any) => (
+                    {playersData.awayPlayers.map((player: any) => (
                       <li key={player.id}>{player.name} (HCP: {player.handicapIndex})</li>
                     ))}
                   </ul>
@@ -1173,9 +1167,9 @@ export default function ScorecardView() {
                   </tr>
                   
                   {/* Home Team/Players Gross */}
-                  {(match.format.toLowerCase().includes('singles') || match.format.toLowerCase().includes('best ball')) && homePlayers.length > 0 ? (
+                  {(match.format.toLowerCase().includes('singles') || match.format.toLowerCase().includes('best ball')) && playersData?.homePlayers?.length > 0 ? (
                     // Create a row for each home player in Singles or Best Ball format
-                    homePlayers.map((player, playerIndex) => (
+                    playersData.homePlayers.map((player, playerIndex) => (
                       <tr key={`home-player-${playerIndex}`} className={data?.match?.homeTeamIsReal === true ? "bg-emerald-50" : "bg-blue-50"}>
                         <td className={`whitespace-nowrap py-2 pl-3 pr-3 text-xs font-medium ${data?.match?.homeTeamIsReal === true ? "text-emerald-700" : "text-blue-800"}`}>
                           {`${player.name} (Gross)`}
@@ -1228,9 +1222,9 @@ export default function ScorecardView() {
                   )}
                   
                   {/* Away Team/Players Gross */}
-                  {(match.format.toLowerCase().includes('singles') || match.format.toLowerCase().includes('best ball')) && awayPlayers.length > 0 ? (
+                  {(match.format.toLowerCase().includes('singles') || match.format.toLowerCase().includes('best ball')) && playersData?.awayPlayers?.length > 0 ? (
                     // Create a row for each away player in Singles or Best Ball format
-                    awayPlayers.map((player, playerIndex) => (
+                    playersData.awayPlayers.map((player, playerIndex) => (
                       <tr key={`away-player-${playerIndex}`} className={data?.match?.awayTeamIsReal === true ? "bg-emerald-50" : "bg-blue-50"}>
                         <td className={`whitespace-nowrap py-2 pl-3 pr-3 text-xs font-medium ${data?.match?.awayTeamIsReal === true ? "text-emerald-700" : "text-blue-800"}`}>
                           {`${player.name} (Gross)`}
@@ -1285,10 +1279,10 @@ export default function ScorecardView() {
                   {!match.isFourManTeam && (
                     <>
                       {/* Home Team/Players Net */}
-                      {(match.format.toLowerCase().includes('singles') || match.format.toLowerCase().includes('best ball')) && homePlayers.length > 0 ? (
+                      {(match.format.toLowerCase().includes('singles') || match.format.toLowerCase().includes('best ball')) && playersData?.homePlayers?.length > 0 ? (
                         <>
                           {/* Create a row for each player for Net scores */}
-                          {homePlayers.map((player, playerIndex) => (
+                          {playersData.homePlayers.map((player, playerIndex) => (
                             <tr key={`home-player-net-${playerIndex}`}>
                               <td className="whitespace-nowrap py-2 pl-3 pr-3 text-xs font-medium text-gray-900">
                                 {`${player.name} (Net)`}
@@ -1311,14 +1305,14 @@ export default function ScorecardView() {
                           ))}
                           
                           {/* Add a Best Ball Net row for team formats */}
-                          {match.format.toLowerCase().includes('best ball') && homePlayers.length > 1 && (
+                          {match.format.toLowerCase().includes('best ball') && playersData.homePlayers.length > 1 && (
                             <tr className="bg-green-50">
                               <td className="whitespace-nowrap py-2 pl-3 pr-3 text-xs font-medium text-emerald-800">
                                 {`${match.homeTeam} (Best Ball Net)`}
                               </td>
                               {frontNine.map((hole: any) => {
                                 // Calculate net scores for all players on this hole
-                                const playerNetScores = homePlayers.map((player, idx) => {
+                                const playerNetScores = playersData.homePlayers.map((player, idx) => {
                                   const grossScore = scores[`home-${idx}-${hole.number}`] !== undefined 
                                     ? scores[`home-${idx}-${hole.number}`] 
                                     : hole.homeGross;
@@ -1366,10 +1360,10 @@ export default function ScorecardView() {
                       )}
                       
                       {/* Away Team/Players Net */}
-                      {(match.format.toLowerCase().includes('singles') || match.format.toLowerCase().includes('best ball')) && awayPlayers.length > 0 ? (
+                      {(match.format.toLowerCase().includes('singles') || match.format.toLowerCase().includes('best ball')) && playersData?.awayPlayers?.length > 0 ? (
                         <>
                           {/* Create a row for each player for Net scores */}
-                          {awayPlayers.map((player, playerIndex) => (
+                          {playersData.awayPlayers.map((player, playerIndex) => (
                             <tr key={`away-player-net-${playerIndex}`}>
                               <td className="whitespace-nowrap py-2 pl-3 pr-3 text-xs font-medium text-gray-900">
                                 {`${player.name} (Net)`}
@@ -1392,14 +1386,14 @@ export default function ScorecardView() {
                           ))}
                           
                           {/* Add a Best Ball Net row for team formats */}
-                          {match.format.toLowerCase().includes('best ball') && awayPlayers.length > 1 && (
+                          {match.format.toLowerCase().includes('best ball') && playersData.awayPlayers.length > 1 && (
                             <tr className="bg-blue-50">
                               <td className="whitespace-nowrap py-2 pl-3 pr-3 text-xs font-medium text-blue-800">
                                 {`${match.awayTeam} (Best Ball Net)`}
                               </td>
                               {frontNine.map((hole: any) => {
                                 // Calculate net scores for all players on this hole
-                                const playerNetScores = awayPlayers.map((player, idx) => {
+                                const playerNetScores = playersData.awayPlayers.map((player, idx) => {
                                   const grossScore = scores[`away-${idx}-${hole.number}`] !== undefined 
                                     ? scores[`away-${idx}-${hole.number}`] 
                                     : hole.awayGross;
@@ -1429,6 +1423,7 @@ export default function ScorecardView() {
                             </tr>
                           )}
                         </>
+                        )
                       ) : (
                         // Single row for team formats
                         <tr>
@@ -1646,9 +1641,9 @@ export default function ScorecardView() {
                   </tr>
                   
                   {/* Home Team/Players Gross */}
-                  {(match.format.toLowerCase().includes('singles') || match.format.toLowerCase().includes('best ball')) && homePlayers.length > 0 ? (
+                  {(match.format.toLowerCase().includes('singles') || match.format.toLowerCase().includes('best ball')) && playersData?.homePlayers?.length > 0 ? (
                     // Create a row for each home player in Singles or Best Ball format
-                    homePlayers.map((player, playerIndex) => (
+                    playersData.homePlayers.map((player, playerIndex) => (
                       <tr key={`back-home-player-${playerIndex}`} className={data?.match?.homeTeamIsReal === true ? "bg-emerald-50" : "bg-blue-50"}>
                         <td className={`whitespace-nowrap py-2 pl-3 pr-3 text-xs font-medium ${data?.match?.homeTeamIsReal === true ? "text-emerald-700" : "text-blue-800"}`}>
                           {`${player.name} (Gross)`}
@@ -1701,9 +1696,9 @@ export default function ScorecardView() {
                   )}
                   
                   {/* Away Team/Players Gross */}
-                  {(match.format.toLowerCase().includes('singles') || match.format.toLowerCase().includes('best ball')) && awayPlayers.length > 0 ? (
+                  {(match.format.toLowerCase().includes('singles') || match.format.toLowerCase().includes('best ball')) && playersData?.awayPlayers?.length > 0 ? (
                     // Create a row for each away player in Singles or Best Ball format
-                    awayPlayers.map((player, playerIndex) => (
+                    playersData.awayPlayers.map((player, playerIndex) => (
                       <tr key={`back-away-player-${playerIndex}`} className={data?.match?.awayTeamIsReal === true ? "bg-emerald-50" : "bg-blue-50"}>
                         <td className={`whitespace-nowrap py-2 pl-3 pr-3 text-xs font-medium ${data?.match?.awayTeamIsReal === true ? "text-emerald-700" : "text-blue-800"}`}>
                           {`${player.name} (Gross)`}
@@ -1758,10 +1753,10 @@ export default function ScorecardView() {
                   {!match.isFourManTeam && (
                     <>
                       {/* Home Team/Players Net */}
-                      {(match.format.toLowerCase().includes('singles') || match.format.toLowerCase().includes('best ball')) && homePlayers.length > 0 ? (
+                      {(match.format.toLowerCase().includes('singles') || match.format.toLowerCase().includes('best ball')) && playersData?.homePlayers?.length > 0 ? (
                         <>
                           {/* Create a row for each player for Net scores */}
-                          {homePlayers.map((player, playerIndex) => (
+                          {playersData.homePlayers.map((player, playerIndex) => (
                             <tr key={`back-home-player-net-${playerIndex}`}>
                               <td className="whitespace-nowrap py-2 pl-3 pr-3 text-xs font-medium text-gray-900">
                                 {`${player.name} (Net)`}
@@ -1784,14 +1779,14 @@ export default function ScorecardView() {
                           ))}
                           
                           {/* Add a Best Ball Net row for team formats */}
-                          {match.format.toLowerCase().includes('best ball') && homePlayers.length > 1 && (
+                          {match.format.toLowerCase().includes('best ball') && playersData.homePlayers.length > 1 && (
                             <tr className="bg-green-50">
                               <td className="whitespace-nowrap py-2 pl-3 pr-3 text-xs font-medium text-emerald-800">
                                 {`${match.homeTeam} (Best Ball Net)`}
                               </td>
                               {backNine.map((hole: any) => {
                                 // Calculate net scores for all players on this hole
-                                const playerNetScores = homePlayers.map((player, idx) => {
+                                const playerNetScores = playersData.homePlayers.map((player, idx) => {
                                   const grossScore = scores[`home-${idx}-${hole.number}`] !== undefined 
                                     ? scores[`home-${idx}-${hole.number}`] 
                                     : hole.homeGross;
@@ -1839,10 +1834,10 @@ export default function ScorecardView() {
                       )}
                       
                       {/* Away Team/Players Net */}
-                      {(match.format.toLowerCase().includes('singles') || match.format.toLowerCase().includes('best ball')) && awayPlayers.length > 0 ? (
+                      {(match.format.toLowerCase().includes('singles') || match.format.toLowerCase().includes('best ball')) && playersData?.awayPlayers?.length > 0 ? (
                         <>
                           {/* Create a row for each player for Net scores */}
-                          {awayPlayers.map((player, playerIndex) => (
+                          {playersData.awayPlayers.map((player, playerIndex) => (
                             <tr key={`away-player-net-${playerIndex}`}>
                               <td className="whitespace-nowrap py-2 pl-3 pr-3 text-xs font-medium text-gray-900">
                                 {`${player.name} (Net)`}
@@ -1865,14 +1860,14 @@ export default function ScorecardView() {
                           ))}
                           
                           {/* Add a Best Ball Net row for team formats */}
-                          {match.format.toLowerCase().includes('best ball') && awayPlayers.length > 1 && (
+                          {match.format.toLowerCase().includes('best ball') && playersData.awayPlayers.length > 1 && (
                             <tr className="bg-blue-50">
                               <td className="whitespace-nowrap py-2 pl-3 pr-3 text-xs font-medium text-blue-800">
                                 {`${match.awayTeam} (Best Ball Net)`}
                               </td>
                               {backNine.map((hole: any) => {
                                 // Calculate net scores for all players on this hole
-                                const playerNetScores = awayPlayers.map((player, idx) => {
+                                const playerNetScores = playersData.awayPlayers.map((player, idx) => {
                                   const grossScore = scores[`away-${idx}-${hole.number}`] !== undefined 
                                     ? scores[`away-${idx}-${hole.number}`] 
                                     : hole.awayGross;
@@ -1902,6 +1897,7 @@ export default function ScorecardView() {
                             </tr>
                           )}
                         </>
+                        )
                       ) : (
                         // Single row for team formats
                         <tr>
@@ -2024,12 +2020,12 @@ export default function ScorecardView() {
                     <span className={`font-bold ${data?.match?.homeTeamIsReal === true ? "text-emerald-700" : "text-blue-700"}`}>H</span>
                   </div>
                   <div>
-                    {(match.format.toLowerCase().includes('singles') || match.format.toLowerCase().includes('best ball')) && homePlayers.length > 0 ? (
+                    {(match.format.toLowerCase().includes('singles') || match.format.toLowerCase().includes('best ball')) && playersData?.homePlayers?.length > 0 ? (
                       <div>
                         <p className={`font-semibold ${data?.match?.homeTeamIsReal === true ? "text-emerald-700" : "text-blue-700"}`}>
                           {match.homeTeam}
                         </p>
-                        {playersData?.homePlayers && homePlayers.map((player: Player, index: number) => (
+                        {playersData?.homePlayers && playersData.homePlayers.map((player: Player, index: number) => (
                           <div key={`home-player-hcp-${index}`} className="ml-2 mb-1">
                             <p className="font-medium">{player.name}</p>
                             <p>
@@ -2052,12 +2048,12 @@ export default function ScorecardView() {
                     <span className={`font-bold ${data?.match?.awayTeamIsReal === true ? "text-emerald-700" : "text-blue-700"}`}>A</span>
                   </div>
                   <div>
-                    {(match.format.toLowerCase().includes('singles') || match.format.toLowerCase().includes('best ball')) && awayPlayers.length > 0 ? (
+                    {(match.format.toLowerCase().includes('singles') || match.format.toLowerCase().includes('best ball')) && playersData?.awayPlayers?.length > 0 ? (
                       <div>
                         <p className={`font-semibold ${data?.match?.awayTeamIsReal === true ? "text-emerald-700" : "text-blue-700"}`}>
                           {match.awayTeam}
                         </p>
-                        {playersData?.awayPlayers && awayPlayers.map((player: Player, index: number) => (
+                        {playersData?.awayPlayers && playersData.awayPlayers.map((player: Player, index: number) => (
                           <div key={`away-player-hcp-${index}`} className="ml-2 mb-1">
                             <p className="font-medium">{player.name}</p>
                             <p>
@@ -2096,7 +2092,7 @@ export default function ScorecardView() {
             <div className="mt-2 grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
                 <h4 className={`text-xs font-medium ${data?.match?.homeTeamIsReal === true ? "text-emerald-700" : "text-blue-600"}`}>
-                  {(match.format.toLowerCase().includes('singles') || match.format.toLowerCase().includes('best ball')) && homePlayers.length > 0
+                  {(match.format.toLowerCase().includes('singles') || match.format.toLowerCase().includes('best ball')) && playersData?.homePlayers?.length > 0
                     ? playersData?.homePlayers?.map((p: Player) => p.name).join(', ')
                     : match.homeTeam}
                 </h4>
@@ -2108,7 +2104,7 @@ export default function ScorecardView() {
               </div>
               <div>
                 <h4 className={`text-xs font-medium ${data?.match?.awayTeamIsReal === true ? "text-emerald-700" : "text-blue-600"}`}>
-                  {(match.format.toLowerCase().includes('singles') || match.format.toLowerCase().includes('best ball')) && awayPlayers.length > 0
+                  {(match.format.toLowerCase().includes('singles') || match.format.toLowerCase().includes('best ball')) && playersData?.awayPlayers?.length > 0
                     ? playersData?.awayPlayers?.map((p: Player) => p.name).join(', ')
                     : match.awayTeam}
                 </h4>

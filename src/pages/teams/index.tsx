@@ -216,15 +216,6 @@ export default function Teams() {
                     )}
                   </ul>
                 </div>
-                
-                <div className="mt-6 flex justify-end">
-                  <Link
-                    href={`/teams/${team.id}`}
-                    className="text-sm font-medium text-primary hover:text-primary/80"
-                  >
-                    View Details
-                  </Link>
-                </div>
               </div>
             ))
           )}

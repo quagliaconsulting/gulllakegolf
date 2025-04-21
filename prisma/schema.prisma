@@ -56,12 +56,12 @@ model Player {
   phone           String?
   photoUrl        String?
   handicapIndex   Float
-  teamId          String
+  teamId          String?
   accommodationId String?
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
   accommodation   Accommodation?  @relation(fields: [accommodationId], references: [id])
-  team            Team            @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  team            Team?           @relation(fields: [teamId], references: [id], onDelete: SetNull)
   playerPairings  PlayerPairing[] @relation("PlayerInPairing")
   payments        PlayerPayment[]
   ctpWins         CTPResult[]

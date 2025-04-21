@@ -207,6 +207,7 @@ export default async function handler(
                 data: {
                   startingHole: match.startingHole || 1,
                   teeTime: new Date(`${day.date}T${match.time || '08:00'}:00Z`),
+                  holes: match.holes || 18, // Use the holes property from the form data (9 or 18)
                   
                   tournament: { connect: { id: tournamentId } },
                   schedule: { connect: { id: scheduleDay.id } },

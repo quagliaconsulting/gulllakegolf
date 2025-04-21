@@ -4,10 +4,11 @@
 
 /**
  * Apply format multiplier to a handicap
+ * @deprecated This logic is now integrated into calculateTeamHandicap
  */
-export function applyFormatMultiplier(handicap: number, formatMultiplier: number): number {
-  return handicap * formatMultiplier;
-}
+// export function applyFormatMultiplier(handicap: number, formatMultiplier: number): number {
+//   return handicap * formatMultiplier;
+// }
 
 /**
  * Determine if a stroke should be given on a specific hole based on player handicap
@@ -83,66 +84,56 @@ export function calculateNetScore(
 }
 
 /**
- * Calculate team handicap based on player handicaps and format
- * Different formats use different calculations
+ * Define the structure for team handicap format configuration.
+ * This object would typically be populated from database data.
+ */
+// export interface TeamHandicapFormat {
+//   // Identifier for the format (e.g., fetched from DB) - Not directly used in calculation but good practice
+//   id?: string | number; 
+//   name?: string; // e.g., "2 Man Best Ball" - For reference, not used in calculation logic
+//   
+//   // Type of calculation method
+//   calculationType: 'SINGLES' | 'LOWEST_PERCENTAGE' | 'AVERAGE' | 'WEIGHTED_LOW_HIGH' | 'WEIGHTED_PAIR';
+
+//   // Parameters specific to the calculation type
+//   params: {
+//     // Used for LOWEST_PERCENTAGE (e.g., 0.9 for Best Ball)
+//     percentage?: number;       
+//     // Used for WEIGHTED_LOW_HIGH (e.g., 0.35 low, 0.15 high for Scramble)
+//     // Also used for WEIGHTED_PAIR (e.g., 0.6 low, 0.4 high for Chapman)
+//     lowPercentage?: number;    
+//     highPercentage?: number;   
+//   };
+//   
+//   // Optional overall multiplier applied AFTER the main calculation (Defaults to 1)
+//   // Example: Used in Alternate Shot where average is calculated, then multiplied by 0.7
+//   formatMultiplier?: number; 
+// }
+
+/**
+ * Calculate team handicap based on the average of player handicaps and a format multiplier.
+ * If the format is designated as a 4-man team event, no handicap is applied (returns 0).
+ * The multiplier and isFourManTeam flag should be sourced from the FormatMultiplier model.
  */
 export function calculateTeamHandicap(
   playerHandicaps: number[],
-  format: string
+  formatMultiplier: number,
+  isFourManTeam: boolean = false
 ): number {
-  if (!playerHandicaps || playerHandicaps.length === 0) return 0;
-
-  switch (format.toLowerCase()) {
-    case 'singles':
-      // For Singles format, use 100% of the player's handicap
-      if (playerHandicaps.length > 0) {
-        return playerHandicaps[0]; // Simply use the player's full handicap
-      }
-      return 0;
-      
-    case 'best ball':
-    case '2 man best ball':
-      // Use 90% of the lowest handicap player
-      const lowestHandicap = Math.min(...playerHandicaps);
-      // We don't round up here - rounding is done in getStrokesOnHole
-      return lowestHandicap * 0.9;
-    
-    case 'alternate shot':
-    case 'mod alt shot':
-    case 'modified alternate shot':
-      // Average of the two players' handicaps
-      const sum = playerHandicaps.reduce((a, b) => a + b, 0);
-      // We don't round up here - rounding is done in getStrokesOnHole
-      return sum / playerHandicaps.length;
-    
-    case 'scramble':
-    case '2 man scramble':
-      // Use 35% of the lowest handicap player, plus 15% of the highest
-      if (playerHandicaps.length >= 2) {
-        const sortedHandicaps = [...playerHandicaps].sort((a, b) => a - b);
-        const lowest = sortedHandicaps[0];
-        const highest = sortedHandicaps[sortedHandicaps.length - 1];
-        // We don't round up here - rounding is done in getStrokesOnHole
-        return (lowest * 0.35) + (highest * 0.15);
-      }
-      return playerHandicaps[0];
-    
-    case 'chapman':
-      // Use 60% of the lower handicap player plus 40% of the higher handicap player
-      if (playerHandicaps.length >= 2) {
-        const sortedHandicaps = [...playerHandicaps].sort((a, b) => a - b);
-        const lower = sortedHandicaps[0];
-        const higher = sortedHandicaps[1];
-        // We don't round up here - rounding is done in getStrokesOnHole
-        return (lower * 0.6) + (higher * 0.4);
-      }
-      return playerHandicaps[0];
-    
-    default:
-      // For unknown formats, use average
-      const total = playerHandicaps.reduce((a, b) => a + b, 0);
-      return total / playerHandicaps.length;
+  // For 4-man team events, no handicap is applied
+  if (isFourManTeam) {
+    return 0;
   }
+
+  if (!playerHandicaps || playerHandicaps.length === 0) return 0;
+  
+  // Calculate the average handicap of the players
+  const sum = playerHandicaps.reduce((a, b) => a + b, 0);
+  const averageHandicap = sum / playerHandicaps.length;
+  
+  // Apply the format-specific multiplier
+  // We don't round here; rounding happens later if needed (e.g., getStrokesOnHole)
+  return averageHandicap * formatMultiplier;
 }
 
 /**

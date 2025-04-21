@@ -43,6 +43,7 @@ export default async function handler(
       }
       
       // Sort players by home and away teams
+      // For Singles with foursomeGroupId - only include players in this exact match
       const homePlayers = match.playerPairings
         .filter(p => p.isHomeTeam)
         .map(p => p.player);
@@ -50,6 +51,22 @@ export default async function handler(
       const awayPlayers = match.playerPairings
         .filter(p => !p.isHomeTeam)
         .map(p => p.player);
+      
+      console.log('Debug - Player data being returned:', {
+        matchId: match.id,
+        format: match.format.formatName,
+        playerToPlayerMatch: match.playerToPlayerMatch,
+        foursomeGroupId: match.foursomeGroupId,
+        pairings: match.playerPairings.map(p => ({
+          id: p.id,
+          playerId: p.playerId,
+          playerName: p.player.name,
+          isHomeTeam: p.isHomeTeam,
+          pairingGroup: p.pairingGroup
+        })),
+        homePlayers: homePlayers.map(p => ({id: p.id, name: p.name})),
+        awayPlayers: awayPlayers.map(p => ({id: p.id, name: p.name}))
+      });
       
       // Get all available players from both teams
       const allHomePlayers = match.homeTeam.players;
