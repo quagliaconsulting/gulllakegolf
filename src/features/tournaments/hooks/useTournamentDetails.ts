@@ -20,7 +20,7 @@ export function useTournamentDetails(tournamentId: string | undefined) {
     isLoading,
     mutate: refreshTournament
   } = useApi(
-    tournamentId ? `/api/tournaments/${tournamentId}` : null,
+    tournamentId ? `/tournaments/${tournamentId}` : null,
     { 
       revalidateOnFocus: false,
       dedupingInterval: 30000
@@ -34,7 +34,7 @@ export function useTournamentDetails(tournamentId: string | undefined) {
     isLoading: schedulesLoading,
     mutate: refreshSchedules
   } = useApi(
-    tournamentId ? `/api/tournaments/${tournamentId}/schedule` : null,
+    tournamentId ? `/tournaments/${tournamentId}/schedule` : null,
     { 
       revalidateOnFocus: false
     }
