@@ -114,7 +114,15 @@ src/
    - Created reusable authentication utilities (requireAuth, getSessionUser)
    - Improved error handling for authentication flows
 
+7. **Batch Assign Players Refactoring (April 22, 2025)**
+   - Refactored batch-assign.tsx (987 lines) into smaller components
+   - Created feature-specific components (MatchAssignmentCard, PlayerSelectionList, SinglesMatchupBuilder)
+   - Implemented useBatchAssign hook for state and data fetching logic
+   - Improved code organization with clear separation of concerns
+   - Enhanced type safety with proper interfaces
+
 ### Next Steps
-- Apply similar refactoring patterns to remaining large pages (batch-assign.tsx)
+- Continue refactoring other large pages (players.tsx, tournaments/new.tsx)
 - Clean up debug code and console.logs
+- Implement TournamentService and other domain services
 - Improve type safety and add API request/response types
