@@ -66,7 +66,7 @@ export const TournamentHeader: React.FC<TournamentHeaderProps> = ({
                     : 'bg-gray-100 text-gray-800'
                 }`}
               >
-                {tournament.status.charAt(0).toUpperCase() + tournament.status.slice(1)}
+                {tournament.status ? tournament.status.charAt(0).toUpperCase() + tournament.status.slice(1) : 'Unknown'}
               </span>
             </div>
           </div>

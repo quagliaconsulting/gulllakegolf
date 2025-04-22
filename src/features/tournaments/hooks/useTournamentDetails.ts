@@ -15,7 +15,7 @@ export function useTournamentDetails(tournamentId: string | undefined) {
 
   // Fetch tournament data
   const {
-    data: tournament,
+    data: rawTournament,
     error,
     isLoading,
     mutate: refreshTournament
@@ -26,6 +26,19 @@ export function useTournamentDetails(tournamentId: string | undefined) {
       dedupingInterval: 30000
     }
   );
+  
+  // Normalize tournament data to handle inconsistent API responses
+  const tournament = rawTournament ? {
+    ...rawTournament,
+    // Ensure status is a string with a default value
+    status: rawTournament.status || 'upcoming',
+    // Ensure other required fields have defaults
+    teams: rawTournament.teams || [],
+    name: rawTournament.name || 'Tournament',
+    location: rawTournament.location || '',
+    startDate: rawTournament.startDate || new Date().toISOString(),
+    endDate: rawTournament.endDate || new Date().toISOString()
+  } : null;
 
   // Fetch schedules
   const {
