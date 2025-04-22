@@ -34,10 +34,12 @@ export default function PaymentManagement({
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200 bg-white">
-            {players.map((player: any) => {
-              const buyInStatus = playerPayments[player.id]?.BUY_IN || false;
-              const ctpStatus = playerPayments[player.id]?.CTP_ENTRY || false;
-              const skinsStatus = playerPayments[player.id]?.SKINS_ENTRY || false;
+            {(players || []).map((player: any) => {
+              // Access payment status safely with default values
+              const playerPayment = playerPayments[player.id] || {};
+              const buyInStatus = playerPayment.BUY_IN === true;
+              const ctpStatus = playerPayment.CTP_ENTRY === true;
+              const skinsStatus = playerPayment.SKINS_ENTRY === true;
               
               return (
                 <tr key={player.id}>

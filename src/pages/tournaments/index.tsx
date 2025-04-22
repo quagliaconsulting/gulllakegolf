@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/authContext';
 import axios from 'axios';
-import useSWR from 'swr';
+import { useApi } from '@/services/api/apiClient';
 import { 
   TrophyIcon, 
   CalendarIcon, 
@@ -129,19 +129,22 @@ export default function Tournaments() {
   const [filters, setFilters] = useState({ status: 'all', year: 'all', view: 'cards' });
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [tournamentToDelete, setTournamentToDelete] = useState<string | null>(null);
+  const [isCreatingDummy, setIsCreatingDummy] = useState(false);
+  const [isCleaningData, setIsCleaningData] = useState(false);
   const { user } = useAuth();
   const isAdmin = user?.role === 'ADMIN';
+  // Always show in development mode
+  const isDev = true;
   
   // Fetch cache-busting timestamp
-  const { data: cacheBust } = useSWR('/api/tournaments/cache-bust', fetcher, {
+  const { data: cacheBust } = useApi('/api/tournaments/cache-bust', {
     revalidateOnFocus: true,
     refreshInterval: 60000 // 1 minute
   });
   
   // Fetch tournaments from API with cache-busting
-  const { data, error, isLoading, mutate } = useSWR(
-    () => `/api/tournaments?_=${cacheBust?.timestamp || Date.now()}`, 
-    fetcher, 
+  const { data, error, isLoading, mutate } = useApi(
+    `/api/tournaments?_=${cacheBust?.timestamp || Date.now()}`, 
     {
       revalidateOnFocus: false, 
       dedupingInterval: 10000 // 10 seconds
@@ -178,7 +181,22 @@ export default function Tournaments() {
     
     try {
       // Make API call to delete tournament
-      await axios.delete(`/api/tournaments/${tournamentToDelete}`);
+      const response = await fetch(`/api/tournaments/${tournamentToDelete}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Failed to delete tournament: ${response.statusText}`);
+      }
+      
+      const result = await response.json();
+      
+      if (result.success === false) {
+        throw new Error(result.error || 'Failed to delete tournament');
+      }
       
       // Update local data
       mutate(data.filter((t: any) => t.id !== tournamentToDelete));
@@ -205,6 +223,90 @@ export default function Tournaments() {
     } catch (error) {
       console.error('Error duplicating tournament:', error);
       alert('Failed to duplicate tournament');
+    }
+  };
+  
+  // Create a dummy tournament for development
+  const createDummyTournament = async () => {
+    try {
+      setIsCreatingDummy(true);
+      console.log('Creating dummy tournament...');
+      
+      // Call the API to create a dummy tournament
+      const response = await fetch('/api/dev/create-dummy-tournament', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Server returned ${response.status}: ${response.statusText}`);
+      }
+      
+      const result = await response.json();
+      console.log('Created dummy tournament:', result);
+      
+      // Refresh the tournament list
+      mutate();
+      
+      // Show success message
+      if (result.success && result.data && result.data.tournamentId) {
+        alert(`Development tournament created! ID: ${result.data.tournamentId}`);
+      } else {
+        alert('Development tournament created!');
+      }
+    } catch (error) {
+      console.error('Error creating dummy tournament:', error);
+      alert('Failed to create dummy tournament. See console for details.');
+    } finally {
+      setIsCreatingDummy(false);
+    }
+  };
+  
+  // Clean up all data for development
+  const cleanupData = async () => {
+    if (!confirm('⚠️ WARNING: This will delete ALL players, teams, matches, and related data. This cannot be undone. Continue?')) {
+      return;
+    }
+    
+    if (!confirm('Are you REALLY sure? This will delete EVERYTHING.')) {
+      return;
+    }
+    
+    try {
+      setIsCleaningData(true);
+      console.log('Cleaning up all data...');
+      
+      // Call the cleanup API
+      const response = await fetch('/api/dev/cleanup-data', {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Server returned ${response.status}: ${response.statusText}`);
+      }
+      
+      const result = await response.json();
+      console.log('Cleanup result:', result);
+      
+      // Refresh the tournament list
+      mutate();
+      
+      // Show success message
+      if (result.success && result.data) {
+        alert(`Data cleanup successful!\n\nDeleted:\n- ${result.data.counts.deletedPlayers} players\n- ${result.data.counts.deletedTeams} teams\n- ${result.data.counts.deletedMatches} matches\n- ${result.data.counts.deletedPlayerPairings} player pairings`);
+      } else {
+        alert('Data cleanup completed successfully!');
+      }
+    } catch (error) {
+      console.error('Error cleaning up data:', error);
+      alert('Failed to clean up data. See console for details.');
+    } finally {
+      setIsCleaningData(false);
     }
   };
 
@@ -237,6 +339,22 @@ export default function Tournaments() {
             >
               <ArrowPathIcon className="h-4 w-4 sm:mr-1.5" aria-hidden="true" />
               <span className="hidden sm:inline">Refresh</span>
+            </button>
+            <button
+              onClick={createDummyTournament}
+              disabled={isCreatingDummy}
+              className="inline-flex items-center px-2 sm:px-3 py-1.5 sm:py-2 border border-pink-500 shadow-sm text-sm leading-4 font-medium rounded-md text-pink-600 bg-white hover:bg-pink-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-pink-500 disabled:opacity-50"
+            >
+              <DocumentDuplicateIcon className="h-4 w-4 sm:mr-1.5" aria-hidden="true" />
+              <span className="hidden sm:inline">{isCreatingDummy ? 'Creating...' : 'Create Dev Tournament'}</span>
+            </button>
+            <button
+              onClick={cleanupData}
+              disabled={isCleaningData}
+              className="inline-flex items-center px-2 sm:px-3 py-1.5 sm:py-2 border border-red-500 shadow-sm text-sm leading-4 font-medium rounded-md text-red-600 bg-white hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50"
+            >
+              <TrashIcon className="h-4 w-4 sm:mr-1.5" aria-hidden="true" />
+              <span className="hidden sm:inline">{isCleaningData ? 'Cleaning...' : 'Clean All Data'}</span>
             </button>
             <Link
               href="/tournaments/new"

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Tournament, Player } from '@/types/models';
+import { Tournament } from '@/types/models';
 
 interface PlayerFinancialSummaryProps {
   tournament: Tournament;
@@ -20,6 +20,53 @@ export default function PlayerFinancialSummary({
   ctpPrizePerHole,
   skinsPrizePerHole
 }: PlayerFinancialSummaryProps) {
+  // Log player information for debugging
+  console.log('PlayerFinancialSummary received:', {
+    playerCount: players?.length || 0,
+    paymentRecords: Object.keys(playerPayments || {}).length,
+    ctpCount: ctpResults?.length || 0,
+    skinsCount: skinsResults?.length || 0,
+    firstPlayer: players && players.length > 0 ? players[0]?.name : 'none',
+    firstTeam: players && players.length > 0 ? players[0]?.team?.name : 'none',
+    paymentKeys: Object.keys(playerPayments || {}).slice(0, 3)
+  });
+  
+  // Log the structure of all players for debugging
+  if (players && players.length > 0) {
+    console.log('============= PLAYER DEBUGGING INFO =============');
+    players.forEach((player, idx) => {
+      console.log(`Player ${idx} (${player.id}): ${player.name}`, {
+        hasTeam: !!player.team,
+        teamName: player.team?.name,
+        teamId: player.team?.id,
+        isHomeTeam: player.team?.isHomeTeam,
+        teamMetadata: player.team?.metadata ? JSON.stringify(player.team.metadata).substring(0, 50) : null,
+        paymentKeys: player.id ? Object.keys(playerPayments[player.id] || {}) : [],
+        paymentValues: player.id ? Object.values(playerPayments[player.id] || {}) : []
+      });
+    });
+    console.log('=================================================');
+    
+    // Also log the playerPayments object structure
+    console.log('Player Payments Structure:', Object.keys(playerPayments || {}));
+    if (Object.keys(playerPayments || {}).length > 0) {
+      const samplePlayerId = Object.keys(playerPayments)[0];
+      console.log(`Sample payment for player ${samplePlayerId}:`, playerPayments[samplePlayerId]);
+    }
+  }
+    
+  // If we have no players, show a message instead
+  if (!players || players.length === 0) {
+    return (
+      <section className="bg-white p-6 rounded-lg shadow-md">
+        <h3 className="text-lg font-semibold mb-4">Player Financial Summary</h3>
+        <div className="text-center py-8 text-gray-500">
+          No players found in this tournament. Please add players to teams first.
+        </div>
+      </section>
+    );
+  }
+
   return (
     <section className="bg-white p-6 rounded-lg shadow-md">
       <h3 className="text-lg font-semibold mb-4">Player Financial Summary</h3>
@@ -41,9 +88,11 @@ export default function PlayerFinancialSummary({
           </thead>
           <tbody className="divide-y divide-gray-200 bg-white">
             {players.map((player: any) => {
-              const buyInStatus = playerPayments[player.id]?.BUY_IN || false;
-              const ctpStatus = playerPayments[player.id]?.CTP_ENTRY || false;
-              const skinsStatus = playerPayments[player.id]?.SKINS_ENTRY || false;
+              // Access payment status safely with default values
+              const playerPayment = playerPayments[player.id] || {};
+              const buyInStatus = playerPayment.BUY_IN === true;
+              const ctpStatus = playerPayment.CTP_ENTRY === true;
+              const skinsStatus = playerPayment.SKINS_ENTRY === true;
               
               // Calculate financial totals
               const tournamentAmount = buyInStatus ? (tournament.buyIn || 0) : 0;
@@ -53,11 +102,11 @@ export default function PlayerFinancialSummary({
               
               // Calculate winnings
               const ctpWinnings = ctpResults
-                ?.filter((result: any) => result.player.id === player.id)
+                ?.filter((result: any) => result.player?.id === player.id)
                 .reduce((sum: number, _: any) => sum + ctpPrizePerHole, 0) || 0;
               
               const skinsWinnings = skinsResults
-                ?.filter((result: any) => result.player.id === player.id)
+                ?.filter((result: any) => result.player?.id === player.id)
                 .reduce((sum: number, _: any) => sum + skinsPrizePerHole, 0) || 0;
               
               const netTournament = tournamentAmount;
@@ -71,7 +120,7 @@ export default function PlayerFinancialSummary({
                     {player.name}
                   </td>
                   <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                    {player.team?.name}
+                    {player.team?.name || "No Team"}
                   </td>
                   <td className="whitespace-nowrap px-3 py-4 text-sm text-center">
                     <div className="flex flex-col items-center">
