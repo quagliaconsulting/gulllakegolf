@@ -46,8 +46,9 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
   } = useApi(
     tournamentId ? `/api/tournaments/${tournamentId}/leaderboard` : null,
     { 
-      revalidateOnFocus: false,
-      dedupingInterval: 30000
+      revalidateOnFocus: true,
+      dedupingInterval: 10000, // Shorter interval to refresh data more frequently
+      revalidateOnReconnect: true
     }
   );
 
@@ -227,12 +228,22 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
                     <th scope="col" className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                       W-T-L
                     </th>
+                    <th scope="col" className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Win %
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {/* Sort teams by total points in descending order */}
+                  {/* Sort teams by total points in descending order, then by matches won */}
                   {[...teamStandings]
-                    .sort((a, b) => b.totalPoints - a.totalPoints)
+                    .sort((a, b) => {
+                      // First sort by total points
+                      if (b.totalPoints !== a.totalPoints) {
+                        return b.totalPoints - a.totalPoints;
+                      }
+                      // If points are equal, sort by matches won
+                      return b.matchesWon - a.matchesWon;
+                    })
                     .map((team: TeamStanding, index: number) => (
                     <tr key={team.teamId} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
@@ -242,16 +253,24 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
                         <div className="flex items-center">
                           <div className={`w-2 h-2 rounded-full mr-2 ${team.isHomeTeam ? 'bg-green-500' : 'bg-red-500'}`}></div>
                           <span className="font-medium text-gray-900">{team.teamName}</span>
+                          {team.isHomeTeam && (
+                            <span className="ml-2 text-xs px-1.5 py-0.5 bg-green-100 text-green-800 rounded">Host</span>
+                          )}
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-semibold text-gray-900">
-                        {team.totalPoints}
+                        {parseFloat(team.totalPoints.toFixed(1))}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-500">
                         {team.matchesPlayed}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-500">
                         {team.matchesWon}-{team.matchesTied}-{team.matchesLost}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-500">
+                        {team.matchesPlayed > 0 ? 
+                          `${((team.matchesWon / team.matchesPlayed) * 100).toFixed(1)}%` : 
+                          '-'}
                       </td>
                     </tr>
                   ))}
@@ -302,12 +321,22 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
                     <th scope="col" className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                       W-T-L Holes
                     </th>
+                    <th scope="col" className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Win %
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {/* Sort players by points earned in descending order */}
+                  {/* Sort players by points earned in descending order, then by holes won */}
                   {[...playerStandings]
-                    .sort((a, b) => b.pointsEarned - a.pointsEarned)
+                    .sort((a, b) => {
+                      // First sort by points earned
+                      if (b.pointsEarned !== a.pointsEarned) {
+                        return b.pointsEarned - a.pointsEarned;
+                      }
+                      // If points are equal, sort by holes won
+                      return b.holesWon - a.holesWon;
+                    })
                     .map((player: PlayerStanding, index: number) => (
                     <tr key={player.playerId} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
@@ -320,19 +349,30 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
                         <div className="flex items-center">
                           <div className={`w-2 h-2 rounded-full mr-2 ${player.isHomeTeam ? 'bg-green-500' : 'bg-red-500'}`}></div>
                           <span>{player.teamName}</span>
+                          {player.isHomeTeam && (
+                            <span className="ml-2 text-xs px-1.5 py-0.5 bg-green-100 text-green-800 rounded">Host</span>
+                          )}
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-500">
                         {player.handicapIndex.toFixed(1)}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-semibold text-gray-900">
-                        {player.pointsEarned}
+                        {parseFloat(player.pointsEarned.toFixed(1))}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-500">
                         {player.matchesPlayed}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-500">
                         {player.holesWon}-{player.holesTied}-{player.holesLost}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-500">
+                        {(player.holesWon + player.holesTied + player.holesLost) > 0 ? 
+                          `${((player.holesWon / (player.holesWon + player.holesTied + player.holesLost)) * 100).toFixed(1)}%` : 
+                          '-'}
+                        <span className="ml-1 text-xs text-gray-400">
+                          ({player.holesWon + player.holesTied + player.holesLost} holes)
+                        </span>
                       </td>
                     </tr>
                   ))}

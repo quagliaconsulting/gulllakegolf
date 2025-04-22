@@ -23,11 +23,24 @@ const EmptyPlayer: PlayerFormData = {
 
 export default function NewPlayer() {
   const router = useRouter();
+  const { teamId, tournamentId } = router.query;
   const [players, setPlayers] = useState<PlayerFormData[]>([{ ...EmptyPlayer }]);
   const [teams, setTeams] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [successCount, setSuccessCount] = useState(0);
+
+  // Set default teamId if provided in the URL
+  useEffect(() => {
+    if (teamId && players[0].teamId === '') {
+      const updatedPlayers = [...players];
+      updatedPlayers[0] = {
+        ...updatedPlayers[0],
+        teamId: teamId as string
+      };
+      setPlayers(updatedPlayers);
+    }
+  }, [teamId, players]);
 
   // Fetch teams on component mount
   useEffect(() => {
@@ -113,7 +126,11 @@ export default function NewPlayer() {
       
       // Navigate back after successful submission
       setTimeout(() => {
-        router.push('/players');
+        if (tournamentId && tournamentId !== 'undefined') {
+          router.push(`/tournaments/${tournamentId}/teams/${teamId}/edit`);
+        } else {
+          router.push('/players');
+        }
       }, 1000);
     } catch (err: any) {
       console.error('Error creating player(s):', err);
@@ -130,8 +147,16 @@ export default function NewPlayer() {
 
       <div>
         <div className="mb-8">
-          <Link href="/players" passHref legacyBehavior={false} className="flex items-center text-sm text-gray-500 hover:text-gray-700">
-            <ArrowLeftIcon className="mr-1 h-4 w-4" /> Back to Players
+          <Link 
+            href={tournamentId && tournamentId !== 'undefined' 
+              ? `/tournaments/${tournamentId}/teams/${teamId}/edit` 
+              : '/players'} 
+            passHref 
+            legacyBehavior={false} 
+            className="flex items-center text-sm text-gray-500 hover:text-gray-700"
+          >
+            <ArrowLeftIcon className="mr-1 h-4 w-4" /> 
+            {tournamentId && tournamentId !== 'undefined' ? 'Back to Team' : 'Back to Players'}
           </Link>
         </div>
 
@@ -303,7 +328,9 @@ export default function NewPlayer() {
           {/* Form Actions */}
           <div className="flex justify-end space-x-3">
             <Link
-              href="/players"
+              href={tournamentId && tournamentId !== 'undefined' 
+                ? `/tournaments/${tournamentId}/teams/${teamId}/edit` 
+                : '/players'}
               passHref
               legacyBehavior={false}
               className="inline-flex justify-center py-2 px-4 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"

@@ -28,8 +28,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
     
     if (req.method === 'GET') {
-      // Get all courses
-      const courses = await courseService.getAllCourses();
+      // Extract tournamentId from query parameters if provided
+      const { tournamentId } = req.query;
+      const tournamentIdParam = typeof tournamentId === 'string' ? tournamentId : undefined;
+      
+      console.log("Courses API: Fetching courses", tournamentIdParam ? `for tournament ID: ${tournamentIdParam}` : "for all tournaments");
+      
+      // Get courses, filtered by tournament ID if provided
+      const courses = await courseService.getAllCourses(tournamentIdParam);
+      console.log(`Courses API: Found ${courses.length} courses`);
+      
       // Wrap courses in a "courses" property for backward compatibility
       return sendSuccess(res, { courses });
     } else if (req.method === 'POST') {

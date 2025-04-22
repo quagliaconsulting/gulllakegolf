@@ -150,14 +150,18 @@ const FormatsPage: React.FC = () => {
       <div className="mb-6 bg-blue-50 p-4 rounded-md border border-blue-200">
         <h2 className="text-lg font-semibold text-blue-800 mb-2">Format Types Guide</h2>
         <ul className="list-disc ml-5 text-sm">
-          <li className="mb-1"><span className="font-medium">Singles (1v1):</span> Individual matches with 100% handicap</li>
-          <li className="mb-1"><span className="font-medium">Best Ball / 2-Man Best Ball (2v2):</span> Each player plays their own ball, team uses the better score on each hole</li>
-          <li className="mb-1"><span className="font-medium">Scramble / 2-Man Scramble (2v2):</span> Each player hits a shot, team chooses the best one and both play from there</li>
-          <li className="mb-1"><span className="font-medium">Alternate Shot / Mod Alt Shot (2v2):</span> Players alternate hitting shots on the same ball</li>
+          <li className="mb-1"><span className="font-medium">Singles (1v1):</span> Individual matches with 100% handicap (multiplier = 1.0)</li>
+          <li className="mb-1"><span className="font-medium">Best Ball / 2-Man Best Ball (2v2):</span> Average handicap × multiplier (multiplier = 0.9)</li>
+          <li className="mb-1"><span className="font-medium">Scramble / 2-Man Scramble (2v2):</span> Average handicap × multiplier (multiplier = 0.4)</li>
+          <li className="mb-1"><span className="font-medium">Alternate Shot / Mod Alt Shot (2v2):</span> Average handicap × multiplier (multiplier = 0.7)</li>
+          <li className="mb-1"><span className="font-medium">Chapman (2v2):</span> Average handicap × multiplier (multiplier = 0.6)</li>
           <li className="mb-1"><span className="font-medium">4-Man Team:</span> Uses gross scoring only (no handicaps applied)</li>
         </ul>
         <p className="text-sm mt-2 text-blue-700">
           <strong>Pro Tip:</strong> For 9-hole formats, create separate tee times for Front 9 and Back 9 if using different formats.
+        </p>
+        <p className="text-sm mt-2 text-blue-700">
+          <strong>Note:</strong> All handicap calculations (except Singles and 4-Man Team) use the average of player handicaps, then apply the format multiplier.
         </p>
       </div>
 
@@ -223,19 +227,21 @@ const FormatsPage: React.FC = () => {
                           </div>
                         ) : format.formatName.toLowerCase().includes('best ball') ? (
                           <div>
-                            <p className="font-medium">Best Ball Format (90% of lower handicap):</p>
+                            <p className="font-medium">Best Ball Format (Average):</p>
                             <p>Players: 12 & 18 handicap</p>
-                            <p>Team handicap: 12 × 0.9 = 10.8 rounded to 11</p>
-                            <p>For match play: Team gets 11 strokes on the hardest 11 holes</p>
+                            <p>Average: (12 + 18) ÷ 2 = 15</p>
+                            <p>With multiplier: 15 × {format.multiplier} = {Math.ceil(15 * format.multiplier)}</p>
+                            <p>For match play: Team gets {Math.ceil(15 * format.multiplier)} strokes on the hardest {Math.ceil(15 * format.multiplier)} holes</p>
                             <p>Example: On hole with index 5 (top 5 hardest hole)</p>
                             <p>Gross 5 with 1 stroke = <span className="font-medium">Net 4</span></p>
                           </div>
                         ) : format.formatName.toLowerCase().includes('scramble') ? (
                           <div>
-                            <p className="font-medium">Scramble Format (35% low + 15% high):</p>
+                            <p className="font-medium">Scramble Format (Average):</p>
                             <p>Players: 10 & 20 handicap</p>
-                            <p>Team handicap: (10 × 0.35) + (20 × 0.15) = 3.5 + 3 = 6.5 rounded to 7</p>
-                            <p>For match play: Team gets 7 strokes on the hardest 7 holes</p>
+                            <p>Average: (10 + 20) ÷ 2 = 15</p>
+                            <p>With multiplier: 15 × {format.multiplier} = {Math.ceil(15 * format.multiplier)}</p>
+                            <p>For match play: Team gets {Math.ceil(15 * format.multiplier)} strokes on the hardest {Math.ceil(15 * format.multiplier)} holes</p>
                             <p>Example: On hole with index 3 (top 3 hardest hole)</p>
                             <p>Gross 4 with 1 stroke = <span className="font-medium">Net 3</span></p>
                           </div>
@@ -251,10 +257,11 @@ const FormatsPage: React.FC = () => {
                           </div>
                         ) : format.formatName.toLowerCase().includes('chapman') ? (
                           <div>
-                            <p className="font-medium">Chapman Format (60% low + 40% high):</p>
+                            <p className="font-medium">Chapman Format (Average):</p>
                             <p>Players: 10 & 20 handicap</p>
-                            <p>Team handicap: (10 × 0.6) + (20 × 0.4) = 6 + 8 = 14 strokes</p>
-                            <p>For match play: Team gets 14 strokes on the hardest 14 holes</p>
+                            <p>Average: (10 + 20) ÷ 2 = 15</p>
+                            <p>With multiplier: 15 × {format.multiplier} = {Math.ceil(15 * format.multiplier)}</p>
+                            <p>For match play: Team gets {Math.ceil(15 * format.multiplier)} strokes on the hardest {Math.ceil(15 * format.multiplier)} holes</p>
                             <p>Example: On hole with index 7 (top 7 hardest hole)</p>
                             <p>Gross 5 with 1 stroke = <span className="font-medium">Net 4</span></p>
                           </div>

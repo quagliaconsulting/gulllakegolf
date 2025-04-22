@@ -12,6 +12,11 @@ interface Hole {
   homeNet: number | null;
   awayNet: number | null;
   winner: 'home' | 'away' | 'tie' | null;
+  // Add player scores support
+  homePlayerScores?: Record<string, number | null>;
+  awayPlayerScores?: Record<string, number | null>;
+  // Allow additional properties
+  [key: string]: any;
 }
 
 interface MatchData {
@@ -40,6 +45,9 @@ interface MatchData {
     awayTeamHandicap: number;
     points?: any;
     foursomeMatches?: any[];
+    // Additional properties that may be added at runtime
+    enhancedPlayers?: any[];
+    [key: string]: any;
   };
 }
 
@@ -47,6 +55,14 @@ interface HoleScoreUpdate {
   holeNumber: number;
   homeGross: number | null;
   awayGross: number | null;
+  homePlayerScores?: Record<string, number | null>;
+  awayPlayerScores?: Record<string, number | null>;
+  metadata?: {
+    homePlayerScores?: Record<string, number | null>;
+    awayPlayerScores?: Record<string, number | null>;
+    [key: string]: any;
+  };
+  [key: string]: any;
 }
 
 export function useScorecardState(matchId: string | undefined) {
@@ -377,6 +393,7 @@ export function useScorecardState(matchId: string | undefined) {
       const teamPlayers = team === 'home' ? data.match.homePlayers : data.match.awayPlayers;
       if (teamPlayers.length === 1) {
         newScores[teamKey] = value;
+        console.log(`Singles format: Set team score ${teamKey} to ${value} from single player score`);
       } else {
         // For Singles with multiple players (e.g., Head-to-Head matches grouped as foursome),
         // each player's score is used for their individual match
@@ -386,9 +403,13 @@ export function useScorecardState(matchId: string | undefined) {
           // This ensures each player's score is copied to their respective team score
           // in the context of their individual match
           newScores[teamKey] = value;
+          console.log(`Singles format: Set team score ${teamKey} to ${value} for player ${player.name}`);
         }
       }
     }
+    
+    // For debugging
+    console.log(`Score updated: ${key} = ${value}`);
     
     setScores(newScores);
   };
@@ -423,27 +444,105 @@ export function useScorecardState(matchId: string | undefined) {
           if (data.match.homePlayers) {
             data.match.homePlayers.forEach((player: any) => {
               const scoreKey = `home-player-${player.id}-${hole.number}`;
-              homePlayerScores[player.id] = scores[scoreKey] === '' ? null : Number(scores[scoreKey]);
+              const scoreValue = scores[scoreKey] === '' ? null : Number(scores[scoreKey]);
+              if (scoreValue !== null) {
+                homePlayerScores[player.id] = scoreValue;
+              }
             });
           }
           
           if (data.match.awayPlayers) {
             data.match.awayPlayers.forEach((player: any) => {
               const scoreKey = `away-player-${player.id}-${hole.number}`;
-              awayPlayerScores[player.id] = scores[scoreKey] === '' ? null : Number(scores[scoreKey]);
+              const scoreValue = scores[scoreKey] === '' ? null : Number(scores[scoreKey]);
+              if (scoreValue !== null) {
+                awayPlayerScores[player.id] = scoreValue;
+              }
             });
           }
           
-          // Add player scores to update object - API now supports this in metadata
+          // Add player scores to update object - include as nested objects in metadata
+          update.metadata = {
+            homePlayerScores: homePlayerScores,
+            awayPlayerScores: awayPlayerScores
+          };
+          
+          // Also keep the separate fields for backward compatibility 
           update.homePlayerScores = homePlayerScores;
           update.awayPlayerScores = awayPlayerScores;
         }
         
+        // Debug log to inspect the update object
+        console.log(`Preparing hole ${hole.number} update:`, JSON.stringify(update, null, 2));
+        
         return update;
       });
 
-      await postApi(`/api/matches/${matchId}/scores`, { holeResults: holeUpdates });
+      // Log all updates before sending to API
+      console.log('Sending score updates to API:', JSON.stringify(holeUpdates, null, 2));
+      
+      // Validate we have actual gross scores
+      console.log('Final check before sending to API:');
+      let hasValidScores = true;
+      for (const update of holeUpdates) {
+        // For holes with player scores but no team scores, derive them one last time
+        if (update.homeGross === null && update.metadata?.homePlayerScores) {
+          const validScores = Object.values(update.metadata.homePlayerScores)
+            .filter(s => s !== null && s !== undefined)
+            .map(s => Number(s));
+          
+          if (validScores.length > 0) {
+            update.homeGross = Math.min(...validScores);
+            console.log(`Last-minute fix: Derived homeGross ${update.homeGross} for hole ${update.holeNumber}`);
+          }
+        }
+        
+        if (update.awayGross === null && update.metadata?.awayPlayerScores) {
+          const validScores = Object.values(update.metadata.awayPlayerScores)
+            .filter(s => s !== null && s !== undefined)
+            .map(s => Number(s));
+          
+          if (validScores.length > 0) {
+            update.awayGross = Math.min(...validScores);
+            console.log(`Last-minute fix: Derived awayGross ${update.awayGross} for hole ${update.holeNumber}`);
+          }
+        }
+        
+        console.log(`Hole ${update.holeNumber}: homeGross=${update.homeGross}, awayGross=${update.awayGross}`);
+        
+        if ((update.homeGross === null || update.awayGross === null) &&
+            Object.keys(update.metadata?.homePlayerScores || {}).length > 0 &&
+            Object.keys(update.metadata?.awayPlayerScores || {}).length > 0) {
+          console.warn(`Warning: Hole ${update.holeNumber} has player scores but null team scores!`);
+          hasValidScores = false;
+        }
+      }
+      
+      if (!hasValidScores) {
+        console.warn('⚠️ Some holes have invalid scores - check the logs above');
+      } else {
+        console.log('✅ All holes have valid scores');
+      }
+      
+      // Save scores to the API
+      const result = await postApi(`/api/matches/${matchId}/scores`, { holeResults: holeUpdates });
+      console.log('Score update result:', result);
+      
+      // Refresh the match data with a cache-busting technique
+      console.log('Refreshing match data...');
       await refreshMatch();
+      
+      // Force a second refresh after a short delay to ensure latest data
+      setTimeout(async () => {
+        console.log('Performing second refresh to ensure latest data');
+        await refreshMatch();
+        
+        // Third refresh for extra safety - wait a bit longer to ensure API changes have settled
+        setTimeout(async () => {
+          console.log('Final data refresh to verify changes persisted');
+          await refreshMatch();
+        }, 1000);
+      }, 500);
     } catch (error) {
       console.error('Error saving scores:', error);
       setSaveError(error instanceof Error ? error.message : 'Failed to save scores');

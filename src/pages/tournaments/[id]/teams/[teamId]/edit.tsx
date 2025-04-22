@@ -205,7 +205,7 @@ export default function EditTeam() {
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-lg font-medium text-gray-900">Team Players</h2>
               <Link 
-                href={`/tournaments/${tournamentId}/teams/${teamId}/add-player`}
+                href={`/players/new?teamId=${teamId}&tournamentId=${tournamentId}`}
                 className="btn-secondary btn-sm"
               >
                 Add Player
@@ -222,7 +222,7 @@ export default function EditTeam() {
                     </div>
                     <div className="flex space-x-2">
                       <Link 
-                        href={`/players/${player.id}/edit`}
+                        href={`/players/${player.id}/edit?tournamentId=${tournamentId}`}
                         className="text-sm font-medium text-primary hover:text-primary/80"
                       >
                         Edit

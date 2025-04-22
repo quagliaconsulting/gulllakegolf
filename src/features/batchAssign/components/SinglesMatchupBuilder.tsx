@@ -59,6 +59,30 @@ const SinglesMatchupBuilder: React.FC<SinglesMatchupBuilderProps> = ({
     setUnusedAwayPlayers(unusedAwayPlayers.filter(p => p.id !== awayPlayer.id));
   };
   
+  // Auto-create matchups based on player handicaps
+  const autoCreateMatchups = () => {
+    if (unusedHomePlayers.length < 2 || unusedAwayPlayers.length < 2) {
+      return; // Not enough players to create matchups
+    }
+    
+    // Sort players by handicap
+    const sortedHomePlayers = [...unusedHomePlayers].sort((a, b) => 
+      (a.handicapIndex ?? 0) - (b.handicapIndex ?? 0)
+    );
+    
+    const sortedAwayPlayers = [...unusedAwayPlayers].sort((a, b) => 
+      (a.handicapIndex ?? 0) - (b.handicapIndex ?? 0)
+    );
+    
+    // Create matchups pairing players with similar handicaps
+    const newMatchups = [];
+    const count = Math.min(sortedHomePlayers.length, sortedAwayPlayers.length);
+    
+    for (let i = 0; i < count; i++) {
+      addMatchup(sortedHomePlayers[i], sortedAwayPlayers[i]);
+    }
+  };
+  
   // Remove a matchup
   const removeMatchup = (matchupIndex: number) => {
     const removedMatchup = matchups[matchupIndex];
@@ -185,7 +209,15 @@ const SinglesMatchupBuilder: React.FC<SinglesMatchupBuilderProps> = ({
             </div>
           </div>
           
-          <div className="mt-4 text-right">
+          <div className="mt-4 flex justify-between">
+            <button
+              type="button"
+              onClick={autoCreateMatchups}
+              className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+            >
+              Auto Match by Handicap
+            </button>
+            
             <button
               type="button"
               onClick={() => {

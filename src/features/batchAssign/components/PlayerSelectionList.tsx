@@ -1,5 +1,5 @@
 import React from 'react';
-import { CheckCircleIcon, PlusCircleIcon } from '@heroicons/react/24/outline';
+import { CheckCircleIcon, PlusCircleIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
 
 interface Player {
   id: string;
@@ -34,16 +34,54 @@ const PlayerSelectionList: React.FC<PlayerSelectionListProps> = ({
       onChange([...selectedIds, playerId]);
     }
   };
+  
+  // Make sure we have valid player objects before sorting
+  const validPlayers = players.filter(p => p && typeof p === 'object' && p.id);
+  
+  // Log issues if we're getting invalid players
+  if (validPlayers.length !== players.length) {
+    console.warn(`Filtered out ${players.length - validPlayers.length} invalid players`);
+    console.log('Invalid players:', players.filter(p => !p || typeof p !== 'object' || !p.id));
+  }
+  
+  // Sort players by handicap (lower handicap = better player)
+  const sortedPlayers = [...validPlayers].sort((a, b) => 
+    (a.handicapIndex ?? 99) - (b.handicapIndex ?? 99)
+  );
+  
+  // Auto-select players with best handicaps
+  const autoSelectBestPlayers = () => {
+    // Get top players by handicap (limited to required number)
+    const bestPlayers = sortedPlayers
+      .filter(p => !p.isAssigned || selectedIds.includes(p.id))
+      .slice(0, requiredPlayers)
+      .map(p => p.id);
+      
+    onChange(bestPlayers);
+  };
 
   return (
     <div className="bg-gray-50 rounded-md border border-gray-200 overflow-hidden">
+      <div className="px-4 py-2 bg-gray-100 border-b border-gray-200 flex justify-between items-center">
+        <p className="text-xs text-gray-500">
+          {selectedIds.length} of {requiredPlayers} players selected
+        </p>
+        <button
+          type="button"
+          onClick={autoSelectBestPlayers}
+          className={`inline-flex items-center text-xs font-medium ${teamColor === 'green' ? 'text-green-600 hover:text-green-700' : 'text-red-600 hover:text-red-700'}`}
+        >
+          <ArrowPathIcon className="h-3 w-3 mr-1" />
+          Auto-Select Best
+        </button>
+      </div>
       <ul className="divide-y divide-gray-200 max-h-60 overflow-y-auto">
         {players.length === 0 ? (
           <li className="px-4 py-3 text-sm text-gray-500">
-            No players available
+            No players available. Please add players to this team in the Teams tab.
           </li>
         ) : (
-          players.map(player => {
+          sortedPlayers.map(player => {
             const isSelected = selectedIds.includes(player.id);
             
             return (
@@ -69,11 +107,6 @@ const PlayerSelectionList: React.FC<PlayerSelectionListProps> = ({
           })
         )}
       </ul>
-      <div className="px-4 py-2 bg-gray-100 border-t border-gray-200">
-        <p className="text-xs text-gray-500">
-          {selectedIds.length} of {requiredPlayers} players selected
-        </p>
-      </div>
     </div>
   );
 };

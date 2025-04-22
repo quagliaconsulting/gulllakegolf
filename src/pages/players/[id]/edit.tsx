@@ -16,7 +16,7 @@ type PlayerFormData = {
 
 export default function EditPlayer() {
   const router = useRouter();
-  const { id } = router.query;
+  const { id, tournamentId } = router.query;
   const [playerData, setPlayerData] = useState<PlayerFormData | null>(null);
   const [teams, setTeams] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -119,7 +119,11 @@ export default function EditPlayer() {
       
       // Auto-navigate back after brief delay
       setTimeout(() => {
-        router.push('/players');
+        if (tournamentId && tournamentId !== 'undefined') {
+          router.push(`/tournaments/${tournamentId}`);
+        } else {
+          router.push('/players');
+        }
       }, 1500);
     } catch (err: any) {
       console.error('Error updating player:', err);
@@ -158,8 +162,16 @@ export default function EditPlayer() {
 
       <div>
         <div className="mb-8">
-          <Link href="/players" passHref legacyBehavior={false} className="flex items-center text-sm text-gray-500 hover:text-gray-700">
-            <ArrowLeftIcon className="mr-1 h-4 w-4" /> Back to Players
+          <Link 
+            href={tournamentId && tournamentId !== 'undefined' 
+              ? `/tournaments/${tournamentId}` 
+              : '/players'} 
+            passHref 
+            legacyBehavior={false} 
+            className="flex items-center text-sm text-gray-500 hover:text-gray-700"
+          >
+            <ArrowLeftIcon className="mr-1 h-4 w-4" /> 
+            {tournamentId && tournamentId !== 'undefined' ? 'Back to Tournament' : 'Back to Players'}
           </Link>
         </div>
 
@@ -317,7 +329,9 @@ export default function EditPlayer() {
               
               <div className="flex space-x-3">
                 <Link
-                  href="/players"
+                  href={tournamentId && tournamentId !== 'undefined' 
+                    ? `/tournaments/${tournamentId}` 
+                    : '/players'}
                   passHref
                   legacyBehavior={false}
                   className="inline-flex justify-center py-2 px-4 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"

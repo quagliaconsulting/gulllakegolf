@@ -6,13 +6,23 @@ import { Prisma } from '@prisma/client';
  */
 export class CourseService {
   /**
-   * Get all courses
+   * Get all courses, with optional filter by tournament ID
    */
-  async getAllCourses() {
+  async getAllCourses(tournamentId?: string) {
+    console.log("CourseService.getAllCourses called", tournamentId ? `for tournament: ${tournamentId}` : "for all tournaments");
+    
+    // Build where clause conditionally
+    const where: Prisma.CourseWhereInput = {};
+    if (tournamentId) {
+      where.tournamentId = tournamentId;
+    }
+    
     return await prisma.course.findMany({
+      where,
       include: {
         tournament: {
           select: {
+            id: true,
             name: true,
             year: true,
           },

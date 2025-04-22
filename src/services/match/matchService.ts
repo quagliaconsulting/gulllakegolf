@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/prisma';
-import { calculateTeamHandicap, calculateNetScore, determineHoleWinner } from '@/utils/handicap';
+import { calculateTeamHandicap, calculateNetScore, determineHoleWinner, getStrokesOnHole } from '@/utils/handicap';
 import { isHomeTeam } from '@/utils/teamUtils';
 
 export interface HoleScoreUpdate {
@@ -8,6 +8,9 @@ export interface HoleScoreUpdate {
   awayGross: number | null;
   homePlayerScores?: Record<string, number | null>;
   awayPlayerScores?: Record<string, number | null>;
+  // TypeScript doesn't need to know about these properties at compile time,
+  // but we want to allow them at runtime
+  [key: string]: any;
 }
 
 export interface PlayerMatchup {
@@ -79,18 +82,25 @@ export class MatchService {
       .filter(p => !p.isHomeTeam)
       .map(p => p.player);
       
-    // Calculate team handicaps
+    // Calculate team handicaps using the updated handicap function that handles different formats
+    // Pass format name for specialized calculations based on format type
     const homeTeamHandicap = calculateTeamHandicap(
       homePlayers.map(p => p.handicapIndex),
       match.format.multiplier,
-      match.format.isFourManTeam || false
+      match.format.isFourManTeam || false,
+      match.format.formatName
     );
     
     const awayTeamHandicap = calculateTeamHandicap(
       awayPlayers.map(p => p.handicapIndex),
       match.format.multiplier,
-      match.format.isFourManTeam || false
+      match.format.isFourManTeam || false,
+      match.format.formatName
     );
+    
+    // Log handicap details for debugging
+    console.log(`Match ${match.id} handicaps using format ${match.format.formatName} (multiplier: ${match.format.multiplier}):`);
+    console.log(`- Home team: ${homeTeamHandicap.toFixed(1)}, Away team: ${awayTeamHandicap.toFixed(1)}`);
     
     // Filter holes based on the match's startingHole
     const relevantHoles = match.course.holes.filter(hole => {
@@ -117,6 +127,14 @@ export class MatchService {
       const metadata = holeResult?.metadata as any;
       const homePlayerScores = metadata?.homePlayerScores || {};
       const awayPlayerScores = metadata?.awayPlayerScores || {};
+      
+      // Log the extracted player scores for debugging
+      if (metadata?.homePlayerScores || metadata?.awayPlayerScores) {
+        console.log(`Hole ${hole.number} player scores from metadata:`, {
+          home: metadata?.homePlayerScores,
+          away: metadata?.awayPlayerScores
+        });
+      }
       
       // Create formatted hole result with all necessary data
       return {
@@ -353,7 +371,7 @@ export class MatchService {
       throw new Error('Match not found');
     }
     
-    // Calculate team handicaps
+    // Get players from match
     const homePlayers = match.playerPairings
       .filter(p => p.isHomeTeam)
       .map(p => p.player);
@@ -361,18 +379,31 @@ export class MatchService {
     const awayPlayers = match.playerPairings
       .filter(p => !p.isHomeTeam)
       .map(p => p.player);
-      
+    
+    // For handicap calculation and scoring logic
+    const isSinglesMatch = match.format.formatName === 'Singles' || match.formatId === 'SINGLES';
+    const isPlayerToPlayerMatch = match.playerToPlayerMatch || false;
+    
+    // Calculate handicaps using the updated handicap function that handles all formats
     const homeTeamHandicap = calculateTeamHandicap(
       homePlayers.map(p => p.handicapIndex),
       match.format.multiplier,
-      match.format.isFourManTeam || false
+      match.format.isFourManTeam || false,
+      match.format.formatName
     );
     
     const awayTeamHandicap = calculateTeamHandicap(
       awayPlayers.map(p => p.handicapIndex),
       match.format.multiplier,
-      match.format.isFourManTeam || false
+      match.format.isFourManTeam || false,
+      match.format.formatName
     );
+    
+    // Log handicap details for scoring calculation
+    console.log(`Match ${match.id} updating scores with handicaps:`);
+    console.log(`- Format: ${match.format.formatName} (multiplier: ${match.format.multiplier})`);
+    console.log(`- Home team handicap: ${homeTeamHandicap.toFixed(1)}`);
+    console.log(`- Away team handicap: ${awayTeamHandicap.toFixed(1)}`);
     
     // Process each hole score
     const updates = [];
@@ -391,11 +422,11 @@ export class MatchService {
       }
       
       // Convert empty strings or undefined gross scores to null
-      const homeGross = holeData.homeGross === null || holeData.homeGross === undefined || 
-                        (typeof holeData.homeGross === 'string' && holeData.homeGross === '') ? 
+      let homeGross = holeData.homeGross === null || holeData.homeGross === undefined || 
+                      (typeof holeData.homeGross === 'string' && holeData.homeGross === '') ? 
         null : Number(holeData.homeGross);
-      const awayGross = holeData.awayGross === null || holeData.awayGross === undefined || 
-                        (typeof holeData.awayGross === 'string' && holeData.awayGross === '') ? 
+      let awayGross = holeData.awayGross === null || holeData.awayGross === undefined || 
+                      (typeof holeData.awayGross === 'string' && holeData.awayGross === '') ? 
         null : Number(holeData.awayGross);
 
       // Ensure gross scores are valid numbers if not null
@@ -403,14 +434,114 @@ export class MatchService {
         console.warn(`Invalid score input for hole ${holeNumber}. Skipping.`);
         continue;
       }
+      
+      // Determine if this is a format type that uses player-level scores
+      const isSinglesOrBestBall = match.format.formatName?.toLowerCase().includes('singles') || 
+                                match.format.formatName?.toLowerCase().includes('best ball');
+      
+      // Create or update metadata object
+      // If there's existing metadata, make sure to preserve it
+      let metadata: any = {};
+      
+      // First, fetch existing metadata if it exists
+      const existingHoleResult = await prisma.holeResult.findUnique({
+        where: {
+          matchId_holeId: {
+            matchId: matchId,
+            holeId: hole.id,
+          }
+        },
+        select: {
+          metadata: true,
+          homeTeamGrossScore: true,
+          awayTeamGrossScore: true
+        }
+      });
+      
+      // Start with existing metadata, if any
+      if (existingHoleResult?.metadata) {
+        // Properly copy metadata object
+        if (typeof existingHoleResult.metadata === 'object' && existingHoleResult.metadata !== null) {
+          metadata = JSON.parse(JSON.stringify(existingHoleResult.metadata));
+        }
+        console.log(`Found existing metadata for hole ${hole.number}:`, metadata);
+        
+        // Debug existing scores
+        console.log(`Existing gross scores in DB for hole ${hole.number}:`, {
+          homeGross: existingHoleResult.homeTeamGrossScore,
+          awayGross: existingHoleResult.awayTeamGrossScore
+        });
+      }
+      
+      // Store player-level scores if provided in holeData
+      if (isSinglesOrBestBall) {
+        if (holeData.homePlayerScores) {
+          console.log(`Updating home player scores for hole ${hole.number}:`, holeData.homePlayerScores);
+          metadata.homePlayerScores = holeData.homePlayerScores;
+        }
+        
+        if (holeData.awayPlayerScores) {
+          console.log(`Updating away player scores for hole ${hole.number}:`, holeData.awayPlayerScores);
+          metadata.awayPlayerScores = holeData.awayPlayerScores;
+        }
+      }
+      
+      // CRITICAL FIX: If team gross scores are null but we have player scores in metadata,
+      // derive the team scores from player scores
+      if (metadata.homePlayerScores && homeGross === null) {
+        const validScores = Object.values(metadata.homePlayerScores)
+          .filter(score => score !== null && score !== undefined)
+          .map(score => typeof score === 'string' ? parseInt(score as string) : Number(score));
+        
+        if (validScores.length > 0) {
+          homeGross = Math.min(...validScores);
+          console.log(`CRITICAL FIX: Derived homeGross ${homeGross} from metadata.homePlayerScores for hole ${holeNumber}`);
+        }
+      }
+      
+      if (metadata.awayPlayerScores && awayGross === null) {
+        const validScores = Object.values(metadata.awayPlayerScores)
+          .filter(score => score !== null && score !== undefined)
+          .map(score => typeof score === 'string' ? parseInt(score as string) : Number(score));
+        
+        if (validScores.length > 0) {
+          awayGross = Math.min(...validScores);
+          console.log(`CRITICAL FIX: Derived awayGross ${awayGross} from metadata.awayPlayerScores for hole ${holeNumber}`);
+        }
+      }
+      
+      // Final validation for gross scores
+      if (homeGross === null || awayGross === null) {
+        // Only warn if we have player scores but couldn't derive team scores
+        if ((metadata.homePlayerScores && Object.keys(metadata.homePlayerScores).length > 0) || 
+            (metadata.awayPlayerScores && Object.keys(metadata.awayPlayerScores).length > 0)) {
+          console.warn(`WARNING: Hole ${holeNumber} has player scores but null team scores! This may cause display issues.`);
+        }
+      }
 
-      // Calculate net scores
+      // Calculate net scores with more detailed debugging
+      // Get the strokes each team receives on this hole
+      const homeStrokesOnHole = getStrokesOnHole(homeTeamHandicap, hole.handicap);
+      const awayStrokesOnHole = getStrokesOnHole(awayTeamHandicap, hole.handicap);
+      
+      // Log the handicap details for this hole
+      console.log(`Hole ${hole.number} (index ${hole.handicap}) handicap strokes:`);
+      console.log(`- Home team (${homeTeamHandicap.toFixed(1)}): ${homeStrokesOnHole} strokes`);
+      console.log(`- Away team (${awayTeamHandicap.toFixed(1)}): ${awayStrokesOnHole} strokes`);
+      
+      // Calculate net scores and add extra logging
+      console.log(`Calculating net scores for hole ${hole.number} (index ${hole.handicap}):`);
+      console.log(`- Format: ${match.format.formatName}, Handicap multiplier: ${match.format.multiplier}`);
+      console.log(`- Home handicap: ${homeTeamHandicap.toFixed(1)}, Home gross: ${homeGross}`);
+      console.log(`- Away handicap: ${awayTeamHandicap.toFixed(1)}, Away gross: ${awayGross}`);
+      
       const homeNetScore = homeGross !== null ? calculateNetScore(
         homeGross, 
         homeTeamHandicap, 
         hole.handicap, 
         match.format.isFourManTeam || false
       ) : null;
+      
       const awayNetScore = awayGross !== null ? calculateNetScore(
         awayGross, 
         awayTeamHandicap, 
@@ -418,28 +549,113 @@ export class MatchService {
         match.format.isFourManTeam || false
       ) : null;
       
+      // Extra debug info for calculated net scores
+      if (homeNetScore !== null && awayNetScore !== null) {
+        console.log(`- Calculated net scores: Home ${homeNetScore}, Away ${awayNetScore}`);
+        console.log(`- Result: ${homeNetScore < awayNetScore ? 'Home wins' : 
+                      (homeNetScore > awayNetScore ? 'Away wins' : 'Tie')}`);
+      } else {
+        console.log(`- Cannot calculate net scores: Home gross ${homeGross}, Away gross ${awayGross}`);
+        
+        // If one team has a valid score and the other doesn't, consider the team with a score the winner
+        if (homeGross !== null && awayGross === null) {
+          console.log(`- Setting Home team as winner since only they have a score`);
+        } else if (homeGross === null && awayGross !== null) {
+          console.log(`- Setting Away team as winner since only they have a score`);
+        }
+      }
+      
+      // Log the scores for this hole
+      if (homeGross !== null && awayGross !== null) {
+        console.log(`Scores for hole ${hole.number}:`);
+        console.log(`- Home: ${homeGross} gross → ${homeNetScore} net (${homeStrokesOnHole} strokes)`);
+        console.log(`- Away: ${awayGross} gross → ${awayNetScore} net (${awayStrokesOnHole} strokes)`);
+        
+        // Determine hole winner
+        const winner = homeNetScore !== null && awayNetScore !== null 
+          ? (homeNetScore < awayNetScore ? 'Home' : (awayNetScore < homeNetScore ? 'Away' : 'Tie'))
+          : 'Incomplete';
+        console.log(`- Result: ${winner}`);
+      }
+      
       // Determine winner using utility function
-      const winner = (homeNetScore !== null && awayNetScore !== null) 
-                     ? determineHoleWinner(homeNetScore, awayNetScore) 
-                     : null;
+      let winner = null;
       
-      // Prepare metadata with player-level scores if available
-      const isSinglesOrBestBall = match.format.formatName?.toLowerCase().includes('singles') || 
-                                 match.format.formatName?.toLowerCase().includes('best ball');
+      if (homeNetScore !== null && awayNetScore !== null) {
+        winner = determineHoleWinner(homeNetScore, awayNetScore);
+        console.log(`Winner for hole ${hole.number}: ${winner}`);
+      } else if (homeGross !== null && awayGross === null) {
+        // If one team has a score and the other doesn't, the team with a score wins
+        winner = 'home';
+        console.log(`Winner for hole ${hole.number}: ${winner} (other team has no score)`);
+      } else if (homeGross === null && awayGross !== null) {
+        winner = 'away';
+        console.log(`Winner for hole ${hole.number}: ${winner} (other team has no score)`);
+      } else {
+        console.log(`No winner determined for hole ${hole.number} - incomplete scores`);
+      }
       
-      // Create or update metadata object
-      const metadata: any = {};
-      
+      // We've already handled player-level scores above, no need to do it again
+      /*
       // Store player-level scores if provided in holeData
       if (isSinglesOrBestBall) {
         if (holeData.homePlayerScores) {
+          console.log(`Updating home player scores for hole ${hole.number}:`, holeData.homePlayerScores);
           metadata.homePlayerScores = holeData.homePlayerScores;
+          
+          // For Best Ball, use the best (lowest) player score as the team score
+          // For Singles with one player, use that player's score
+          if (match.format.formatName?.toLowerCase().includes('best ball')) {
+            const validScores = Object.values(holeData.homePlayerScores)
+              .filter(score => score !== null && score !== undefined)
+              .map(score => Number(score));
+            
+            if (validScores.length > 0) {
+              homeGross = Math.min(...validScores);
+              console.log(`Auto-set homeGross to ${homeGross} from player scores for Best Ball`);
+            }
+          } else if (match.format.formatName?.toLowerCase().includes('singles') && 
+                    Object.keys(holeData.homePlayerScores).length === 1) {
+            const playerScore = Object.values(holeData.homePlayerScores)[0];
+            if (playerScore !== null && playerScore !== undefined) {
+              homeGross = Number(playerScore);
+              console.log(`Auto-set homeGross to ${homeGross} from single player score for Singles`);
+            }
+          }
         }
         
         if (holeData.awayPlayerScores) {
+          console.log(`Updating away player scores for hole ${hole.number}:`, holeData.awayPlayerScores);
           metadata.awayPlayerScores = holeData.awayPlayerScores;
+          
+          // For Best Ball, use the best (lowest) player score as the team score
+          // For Singles with one player, use that player's score
+          if (match.format.formatName?.toLowerCase().includes('best ball')) {
+            const validScores = Object.values(holeData.awayPlayerScores)
+              .filter(score => score !== null && score !== undefined)
+              .map(score => Number(score));
+            
+            if (validScores.length > 0) {
+              awayGross = Math.min(...validScores);
+              console.log(`Auto-set awayGross to ${awayGross} from player scores for Best Ball`);
+            }
+          } else if (match.format.formatName?.toLowerCase().includes('singles') && 
+                    Object.keys(holeData.awayPlayerScores).length === 1) {
+            const playerScore = Object.values(holeData.awayPlayerScores)[0];
+            if (playerScore !== null && playerScore !== undefined) {
+              awayGross = Number(playerScore);
+              console.log(`Auto-set awayGross to ${awayGross} from single player score for Singles`);
+            }
+          }
         }
       }
+      */
+      // End of commented out duplicate code
+      
+      console.log(`Final metadata for hole ${hole.number}:`, metadata);
+      
+      // Log the metadata structure before updating
+      console.log(`Hole ${hole.number} final metadata:`, JSON.stringify(metadata, null, 2));
       
       // Update or create hole result
       updates.push(
@@ -457,8 +673,8 @@ export class MatchService {
             awayTeamNetScore: awayNetScore,
             winnerTeamId: winner === 'home' ? match.homeTeamId : 
                           winner === 'away' ? match.awayTeamId : null,
-            // Only update metadata if new player scores are provided
-            ...(Object.keys(metadata).length > 0 ? { metadata } : {})
+            // Always update metadata, ensuring it's properly formatted
+            metadata: metadata
           },
           create: {
             matchId: matchId,
@@ -469,11 +685,14 @@ export class MatchService {
             awayTeamNetScore: awayNetScore,
             winnerTeamId: winner === 'home' ? match.homeTeamId : 
                           winner === 'away' ? match.awayTeamId : null,
-            // Include metadata if player scores are provided
-            ...(Object.keys(metadata).length > 0 ? { metadata } : {})
+            // Always include metadata, ensuring it's properly formatted
+            metadata: metadata
           }
         })
       );
+      
+      // Log the update operation
+      console.log(`Prepared upsert operation for hole ${hole.number} with gross scores: Home=${homeGross}, Away=${awayGross}`);
     }
     
     // Execute all updates
@@ -524,22 +743,53 @@ export class MatchService {
         return;
       }
 
-      // Extract points values with reasonable defaults
-      const pointsPerWin = match.format.points || 1.0;
-      const pointsPerTie = match.format.halfPoints || pointsPerWin / 2.0;
+      // For singles matches with foursome grouping, we need special handling
+      const isSinglesMatch = match.format.formatName === 'Singles' || match.formatId === 'SINGLES';
+      const isPlayerToPlayerMatch = match.playerToPlayerMatch || false;
       
-      console.log(`Using points: Win=${pointsPerWin}, Tie=${pointsPerTie}`);
-      console.log(`Match format: ${match.format.formatName}`);
+      // Check if this is part of a foursome group (multiple singles matches)
+      const isFoursomeGroup = !!match.foursomeGroupId;
+      
+      // Singles format in a foursome group has 2 points available in total (1 point per player-to-player match)
+      // Each individual match has 1 point available (9 holes = 9 individual points available)
+      // Other formats have 1 point available for the entire match
+      
+      // For singles player-to-player matches:
+      // - Each hole is worth 1/9 of a point (for 9 hole matches)
+      // - Each player can earn up to 1 point per match
+      // - This gives 2 total points available per foursome (with 2 singles matches)
+      const totalAvailablePoints = 1.0; // Each individual match worth 1 point
+      
+      // Log the match details for debugging
+      console.log(`Match details: 
+        Format: ${match.format.formatName}
+        SinglesMatch: ${isSinglesMatch}
+        PlayerToPlayer: ${isPlayerToPlayerMatch}
+        FoursomeGroup: ${isFoursomeGroup}
+        FoursomeID: ${match.foursomeGroupId || 'none'}`);
+      
+      
+      // Determine hole count - for 9-hole matches, each hole is worth 1/9 of the total available points
+      const holeCount = holeResults.length > 0 ? 
+        (holeResults.length <= 9 ? 9 : 18) : 9;
+      
+      // For Singles format with player-to-player matches:
+      // - Each player can earn 1 point per match (9 holes)
+      // - Each hole is worth 1/9 point for a win, 1/18 point for a tie
+      // - Total available points per foursome = 2 points (1 point per 1v1 matchup)
+      const pointsPerWin = (totalAvailablePoints / holeCount);
+      const pointsPerTie = pointsPerWin / 2.0;
+      
+      console.log(`Points per hole: Win=${pointsPerWin.toFixed(4)}, Tie=${pointsPerTie.toFixed(4)}`);
+      
+      console.log(`Match format: ${match.format.formatName}, Singles: ${isSinglesMatch}, PlayerToPlayer: ${isPlayerToPlayerMatch}`);
+      console.log(`Total available points: ${totalAvailablePoints}, Hole count: ${holeCount}`);
+      console.log(`Points per hole: Win=${pointsPerWin}, Tie=${pointsPerTie}`);
       
       // Count points for each team
       let homePoints = 0;
       let awayPoints = 0;
       
-      // For singles matches with foursome grouping, we need to count differently
-      const isSinglesMatch = match.format.formatName === 'Singles' || match.formatId === 'SINGLES';
-      const isPlayerToPlayerMatch = match.playerToPlayerMatch || false;
-      
-      console.log(`Is Singles Match: ${isSinglesMatch}, Is Player-to-Player: ${isPlayerToPlayerMatch}`);
       
       // Count how many holes have been played
       const completedHoles = holeResults.filter(result => 
@@ -557,49 +807,137 @@ export class MatchService {
       // Process each hole result to calculate points
       for (const result of holeResults) {
         if (result.homeTeamNetScore !== null && result.awayTeamNetScore !== null) {
-          if (result.homeTeamNetScore < result.awayTeamNetScore) {
-            homePoints += pointsPerWin;
-            console.log(`Hole ${result.holeId}: Home wins (${result.homeTeamNetScore} vs ${result.awayTeamNetScore})`);
+          // Singles matches are scored just like other match play formats
+          // But we'll add extra logging for clarity
+          if (isSinglesMatch && isPlayerToPlayerMatch) {
+            console.log(`Processing singles player-to-player match: ${match.id}`);
             
-            // Set winner in hole result to ensure it's captured for leaderboard
-            if (!result.winnerTeamId) {
+            // For singles matches, use the standard match play scoring
+            // with points determined by the format (same as other formats)
+            if (result.homeTeamNetScore < result.awayTeamNetScore) {
+              // Home player won this hole (lower score wins in golf)
+              homePoints += pointsPerWin;
+              console.log(`Singles match - Hole win for Home (${result.homeTeamNetScore} vs ${result.awayTeamNetScore}) - ${pointsPerWin} points`);
+              console.log(`Setting winnerTeamId to ${match.homeTeamId} (home team) for hole ${result.id}`);
+              
+              // Set winner in hole result and ensure scores are saved correctly
               try {
                 await prisma.holeResult.update({
                   where: { id: result.id },
-                  data: { winnerTeamId: match.homeTeamId }
+                  data: { 
+                    winnerTeamId: match.homeTeamId,
+                    // Force a refresh of net scores to make sure they're correctly stored
+                    homeTeamNetScore: result.homeTeamNetScore,
+                    awayTeamNetScore: result.awayTeamNetScore 
+                  }
                 });
+                console.log(`Updated winner team for hole ${result.id} to ${match.homeTeamId} (home team)`);
               } catch (e) {
                 console.error(`Failed to update winner team ID: ${e}`);
               }
-            }
-          } else if (result.awayTeamNetScore < result.homeTeamNetScore) {
-            awayPoints += pointsPerWin;
-            console.log(`Hole ${result.holeId}: Away wins (${result.awayTeamNetScore} vs ${result.homeTeamNetScore})`);
-            
-            // Set winner in hole result to ensure it's captured for leaderboard
-            if (!result.winnerTeamId) {
+            } else if (result.homeTeamNetScore > result.awayTeamNetScore) {
+              // Away player won this hole (lower score wins)
+              awayPoints += pointsPerWin;
+              console.log(`Singles match - Hole win for Away (${result.awayTeamNetScore} vs ${result.homeTeamNetScore}) - ${pointsPerWin} points`);
+              console.log(`Setting winnerTeamId to ${match.awayTeamId} (away team) for hole ${result.id}`);
+              
+              // Set winner in hole result and make sure scores are correct
               try {
                 await prisma.holeResult.update({
                   where: { id: result.id },
-                  data: { winnerTeamId: match.awayTeamId }
+                  data: { 
+                    winnerTeamId: match.awayTeamId,
+                    // Force a refresh of net scores to make sure they're correctly stored
+                    homeTeamNetScore: result.homeTeamNetScore,
+                    awayTeamNetScore: result.awayTeamNetScore
+                  }
                 });
+                console.log(`Updated winner team for hole ${result.id} to ${match.awayTeamId} (away team)`);
+              } catch (e) {
+                console.error(`Failed to update winner team ID: ${e}`);
+              }
+            } else {
+              // Tied hole (halved) - each gets half points
+              homePoints += pointsPerTie;
+              awayPoints += pointsPerTie;
+              console.log(`Singles match - Hole tied (${result.homeTeamNetScore} vs ${result.awayTeamNetScore}) - ${pointsPerTie} points each`);
+              
+              // Clear winner for tied holes and ensure scores are saved
+              try {
+                await prisma.holeResult.update({
+                  where: { id: result.id },
+                  data: { 
+                    winnerTeamId: null,
+                    // Force a refresh of net scores to make sure they're correctly stored
+                    homeTeamNetScore: result.homeTeamNetScore,
+                    awayTeamNetScore: result.awayTeamNetScore 
+                  }
+                });
+                console.log(`Updated hole ${result.id} as tied`);
               } catch (e) {
                 console.error(`Failed to update winner team ID: ${e}`);
               }
             }
           } else {
-            // Scores are tied
-            homePoints += pointsPerTie;
-            awayPoints += pointsPerTie;
-            console.log(`Hole ${result.holeId}: Tied (${result.homeTeamNetScore} vs ${result.awayTeamNetScore})`);
-            
-            // Clear winner in hole result for ties
-            if (result.winnerTeamId) {
+            // Standard scoring for non-singles matches
+            if (result.homeTeamNetScore < result.awayTeamNetScore) {
+              homePoints += pointsPerWin;
+              console.log(`Hole ${result.holeId}: Home wins (${result.homeTeamNetScore} vs ${result.awayTeamNetScore})`);
+              
+              // Set winner in hole result to ensure it's captured for leaderboard
               try {
                 await prisma.holeResult.update({
                   where: { id: result.id },
-                  data: { winnerTeamId: null }
+                  data: { 
+                    winnerTeamId: match.homeTeamId,
+                    // Ensure net scores are correctly stored
+                    homeTeamNetScore: result.homeTeamNetScore,
+                    awayTeamNetScore: result.awayTeamNetScore
+                  }
                 });
+                console.log(`Updated hole ${result.holeId} with home team win`);
+              } catch (e) {
+                console.error(`Failed to update winner team ID: ${e}`);
+              }
+              
+            } else if (result.homeTeamNetScore > result.awayTeamNetScore) {
+              awayPoints += pointsPerWin;
+              console.log(`Hole ${result.holeId}: Away wins (${result.awayTeamNetScore} vs ${result.homeTeamNetScore})`);
+              
+              // Set winner in hole result to ensure it's captured for leaderboard
+              try {
+                await prisma.holeResult.update({
+                  where: { id: result.id },
+                  data: { 
+                    winnerTeamId: match.awayTeamId,
+                    // Ensure net scores are correctly stored
+                    homeTeamNetScore: result.homeTeamNetScore,
+                    awayTeamNetScore: result.awayTeamNetScore
+                  }
+                });
+                console.log(`Updated hole ${result.holeId} with away team win`);
+              } catch (e) {
+                console.error(`Failed to update winner team ID: ${e}`);
+              }
+              
+            } else {
+              // Scores are tied
+              homePoints += pointsPerTie;
+              awayPoints += pointsPerTie;
+              console.log(`Hole ${result.holeId}: Tied (${result.homeTeamNetScore} vs ${result.awayTeamNetScore})`);
+              
+              // Clear winner in hole result for ties
+              try {
+                await prisma.holeResult.update({
+                  where: { id: result.id },
+                  data: { 
+                    winnerTeamId: null,
+                    // Ensure net scores are correctly stored
+                    homeTeamNetScore: result.homeTeamNetScore,
+                    awayTeamNetScore: result.awayTeamNetScore
+                  }
+                });
+                console.log(`Updated hole ${result.holeId} as tied`);
               } catch (e) {
                 console.error(`Failed to update winner team ID: ${e}`);
               }
@@ -678,12 +1016,42 @@ export class MatchService {
 
   /**
    * Determine winner based on saved hole result
+   * In golf scoring, lower score wins, and we use the net scores
+   * that have already been calculated with handicaps
    */
   private getWinner(holeResult: any): string | null {
-    if (!holeResult) return null;
-    if (holeResult.homeTeamNetScore === null || holeResult.awayTeamNetScore === null) return null;
-    if (holeResult.homeTeamNetScore === holeResult.awayTeamNetScore) return 'tie';
-    return holeResult.homeTeamNetScore < holeResult.awayTeamNetScore ? 'home' : 'away';
+    if (!holeResult) {
+      console.log(`No hole result available, can't determine winner`);
+      return null;
+    }
+    
+    // We don't use winnerTeamId to determine winner side here
+    // Instead we always use the scores, as they're more reliable
+    // The winner status is set separately when scores are updated
+    
+    // Otherwise check the scores
+    if (holeResult.homeTeamNetScore === null || holeResult.awayTeamNetScore === null) {
+      console.log(`Null scores detected (home: ${holeResult.homeTeamNetScore}, away: ${holeResult.awayTeamNetScore}), no winner set`);
+      return null;
+    }
+    
+    // Make sure we're comparing as numbers
+    const homeNet = parseFloat(holeResult.homeTeamNetScore);
+    const awayNet = parseFloat(holeResult.awayTeamNetScore);
+    
+    // Log the decision for debugging
+    if (homeNet === awayNet) {
+      console.log(`Tie detected - Net scores: ${homeNet} vs ${awayNet}`);
+      return 'tie';
+    }
+    
+    // In golf, the LOWER score wins
+    const winner = homeNet < awayNet ? 'home' : 'away';
+    const winningScore = winner === 'home' ? homeNet : awayNet;
+    const losingScore = winner === 'home' ? awayNet : homeNet;
+    
+    console.log(`Winner determined from scores: ${winner} team wins (${winningScore} vs ${losingScore})`);
+    return winner;
   }
 
   /**

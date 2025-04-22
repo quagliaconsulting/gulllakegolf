@@ -117,6 +117,13 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({
             <ArrowPathIcon className="h-5 w-5 text-gray-400" aria-hidden="true" />
           </button>
           <Link
+            href={`/tournaments/${tournamentId}/batch-assign`}
+            className="block rounded-md bg-white px-3 py-2 text-sm font-semibold text-indigo-600 shadow-sm ring-1 ring-inset ring-indigo-300 hover:bg-indigo-50"
+          >
+            <UsersIcon className="-ml-0.5 mr-1.5 h-5 w-5 inline-block" aria-hidden="true" />
+            Batch Assign
+          </Link>
+          <Link
             href={`/schedule/new?tournamentId=${tournamentId}`}
             className="block rounded-md bg-primary px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-primary/90"
           >

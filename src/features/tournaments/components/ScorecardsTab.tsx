@@ -26,6 +26,29 @@ export const ScorecardsTab: React.FC<ScorecardsTabProps> = ({
 }) => {
   const [matchScores, setMatchScores] = useState<Record<string, any>>({});
   const [loadingScores, setLoadingScores] = useState(false);
+  const [activeDay, setActiveDay] = useState<string>('');
+
+  // Load match scores when scorecard tab is active
+  // Set the active day when schedule data is loaded
+  useEffect(() => {
+    if (schedulesData?.schedules && Array.isArray(schedulesData.schedules) && schedulesData.schedules.length > 0) {
+      // Log the schedule data for debugging
+      console.log("Schedule days data:", schedulesData.schedules);
+      
+      // Find the first day with matches
+      const daysWithMatches = schedulesData.schedules.filter((day: any) => 
+        day.matches && day.matches.length > 0
+      );
+      
+      console.log("Days with matches:", daysWithMatches);
+      
+      if (daysWithMatches.length > 0) {
+        // Set the first day with matches as active by default
+        console.log("Setting active day to:", daysWithMatches[0].id);
+        setActiveDay(daysWithMatches[0].id);
+      }
+    }
+  }, [schedulesData]);
 
   // Load match scores when scorecard tab is active
   useEffect(() => {
@@ -64,9 +87,22 @@ export const ScorecardsTab: React.FC<ScorecardsTabProps> = ({
         // Create a new scores object to avoid modifying state directly
         const updatedScores = { ...matchScores };
         
+        // Get auth token from localStorage
+        let headers = {};
+        if (typeof window !== 'undefined') {
+          const token = localStorage.getItem('token');
+          if (token) {
+            headers = {
+              'Authorization': `Bearer ${token}`
+            };
+          }
+        }
+        
+        console.log('Fetching player data with auth token');
+        
         // First pass - get all player assignments in parallel
         const playerPromises = matchesToLoad.map(match => 
-          fetch(`/api/matches/${match.id}/players`)
+          fetch(`/api/matches/${match.id}/players`, { headers })
             .then(res => res.ok ? res.json() : null)
             .catch(err => {
               console.error(`Error fetching players for match ${match.id}:`, err);
@@ -76,7 +112,7 @@ export const ScorecardsTab: React.FC<ScorecardsTabProps> = ({
         );
         
         const scorePromises = matchesToLoad.map(match => 
-          fetch(`/api/matches/${match.id}/scores`)
+          fetch(`/api/matches/${match.id}/scores`, { headers })
             .then(res => res.ok ? res.json() : null)
             .catch(err => {
               console.error(`Error fetching scores for match ${match.id}:`, err);
@@ -103,35 +139,71 @@ export const ScorecardsTab: React.FC<ScorecardsTabProps> = ({
           let awayPlayers: any[] = [];
           
           try {
-            // Handle different response formats
-            if (data.success && data.data) {
-              if (Array.isArray(data.data.homePlayers)) {
-                homePlayers = data.data.homePlayers;
+            console.log(`Processing player data for match ${matchId}:`, data ? 'data exists' : 'data is null');
+            
+            // Get the actual data based on API response format
+            const responseData = data?.success === true ? data.data : data;
+            
+            // Log keys to help with debugging
+            if (responseData) {
+              console.log(`Response data keys for match ${matchId}:`, Object.keys(responseData));
+            }
+            
+            // Handle different response formats systematically
+            if (responseData) {
+              // Try to get players from all possible structures
+              
+              // 1. Try loading from assigned players first (homePlayers/awayPlayers arrays)
+              if (Array.isArray(responseData.homePlayers) && responseData.homePlayers.length > 0) {
+                homePlayers = responseData.homePlayers;
+                console.log(`Found ${homePlayers.length} home players in homePlayers array`);
+              } else if (Array.isArray(responseData.homePlayers)) {
+                console.log(`HomePlayer array exists but is empty (${responseData.homePlayers.length} players)`);
               }
-              if (Array.isArray(data.data.awayPlayers)) {
-                awayPlayers = data.data.awayPlayers;
+              
+              if (Array.isArray(responseData.awayPlayers) && responseData.awayPlayers.length > 0) {
+                awayPlayers = responseData.awayPlayers;
+                console.log(`Found ${awayPlayers.length} away players in awayPlayers array`);
+              } else if (Array.isArray(responseData.awayPlayers)) {
+                console.log(`AwayPlayer array exists but is empty (${responseData.awayPlayers.length} players)`);
               }
-            } else if (data.homePlayers || data.awayPlayers) {
-              if (Array.isArray(data.homePlayers)) {
-                homePlayers = data.homePlayers;
+              
+              // 2. If none assigned, check for available team players (allHomePlayers/allAwayPlayers)
+              if (homePlayers.length === 0 && Array.isArray(responseData.allHomePlayers) && responseData.allHomePlayers.length > 0) {
+                // Take first two players from available list
+                homePlayers = responseData.allHomePlayers.slice(0, 2);
+                console.log(`Using ${homePlayers.length} players from allHomePlayers array instead`);
+                
+                // Log the first player to verify data format
+                if (homePlayers.length > 0) {
+                  console.log(`First home player sample: ${JSON.stringify(homePlayers[0])}`);
+                }
               }
-              if (Array.isArray(data.awayPlayers)) {
-                awayPlayers = data.awayPlayers;
-              }
-            } else if (data.allHomePlayers || data.allAwayPlayers) {
-              if (Array.isArray(data.allHomePlayers)) {
-                homePlayers = data.allHomePlayers.slice(0, 2);
-              }
-              if (Array.isArray(data.allAwayPlayers)) {
-                awayPlayers = data.allAwayPlayers.slice(0, 2);
+              
+              if (awayPlayers.length === 0 && Array.isArray(responseData.allAwayPlayers) && responseData.allAwayPlayers.length > 0) {
+                // Take first two players from available list
+                awayPlayers = responseData.allAwayPlayers.slice(0, 2);
+                console.log(`Using ${awayPlayers.length} players from allAwayPlayers array instead`);
+                
+                // Log the first player to verify data format
+                if (awayPlayers.length > 0) {
+                  console.log(`First away player sample: ${JSON.stringify(awayPlayers[0])}`);
+                }
               }
             }
             
-            if (homePlayers.length > 0 || awayPlayers.length > 0) {
-              playerDataMap[matchId] = { homePlayers, awayPlayers };
-            }
+            // IMPORTANT: Always store the player data even if there are no players yet
+            // This ensures the player data map has an entry for every match
+            playerDataMap[matchId] = { 
+              homePlayers: homePlayers || [], 
+              awayPlayers: awayPlayers || [] 
+            };
+            
+            console.log(`Added players for match ${matchId} to playerDataMap: ${homePlayers.length} home, ${awayPlayers.length} away players`);
           } catch (err) {
             console.error(`Error processing player data for match ${matchId}:`, err);
+            // Still add an empty entry to avoid undefined errors later
+            playerDataMap[matchId] = { homePlayers: [], awayPlayers: [] };
           }
         });
         
@@ -144,40 +216,75 @@ export const ScorecardsTab: React.FC<ScorecardsTabProps> = ({
         
         // Combine data for each match
         matchesToLoad.forEach(match => {
+          // Always get the player data entry (even if it has empty arrays)
           const playerData = playerDataMap[match.id] || { homePlayers: [], awayPlayers: [] };
           const scoreData = scoreDataMap[match.id];
           
-          if (!scoreData || !scoreData.match) return;
+          // Even if we don't have score data, still process the player data
+          if (scoreData && scoreData.match) {
+            // Count completed holes
+            const completedHoles = scoreData.match.holes.filter(
+              (h: any) => h.homeGross !== null && h.awayGross !== null
+            ).length;
+            
+            // Always set the expected hole count based on starting hole
+            // Matches starting on holes 1 or 10 are ALWAYS 9-hole matches
+            const expectedHoles = (match.startingHole === 1 || match.startingHole === 10) ? 9 : 18;
+            
+            // Actual number of holes in the scorecard data
+            const actualHoles = scoreData.match.holes?.length || 0;
+            
+            // Always use the expected holes based on starting hole for consistency
+            const adjustedTotalHoles = expectedHoles;
+            
+            console.log(`Match ${match.id} - Starting hole ${match.startingHole}, expected ${expectedHoles} holes, got ${actualHoles} holes in data`);
+            
+            
+            // Calculate completion percentage
+            const completionPercent = adjustedTotalHoles > 0 
+              ? Math.round((completedHoles / adjustedTotalHoles) * 100) 
+              : 0;
+              
+            console.log(`Match ${match.id} - Holes: completed=${completedHoles}, total=${totalHoles}, adjusted=${adjustedTotalHoles}, startingHole=${match.startingHole}`);
+            
+            
+            console.log(`Match ${match.id} - Processing player data with ${playerData.homePlayers.length} home, ${playerData.awayPlayers.length} away players`);
           
-          // Count completed holes
-          const completedHoles = scoreData.match.holes.filter(
-            (h: any) => h.homeGross !== null && h.awayGross !== null
-          ).length;
-          
-          // Calculate completion percentage
-          const totalHoles = scoreData.match.holes.length;
-          const completionPercent = totalHoles > 0 
-            ? Math.round((completedHoles / totalHoles) * 100) 
-            : 0;
-          
-          updatedScores[match.id] = {
-            completedHoles,
-            totalHoles,
-            completionPercent,
-            homeTeam: scoreData.match.homeTeam,
-            awayTeam: scoreData.match.awayTeam,
-            homePlayers: playerData.homePlayers.length > 0 ? 
-              playerData.homePlayers : 
-              (scoreData.match.homePlayers || []),
-            awayPlayers: playerData.awayPlayers.length > 0 ? 
-              playerData.awayPlayers : 
-              (scoreData.match.awayPlayers || []),
-            format: scoreData.match.format,
-            result: scoreData.match.points ? {
-              homePoints: scoreData.match.points.homeTeamPoints,
-              awayPoints: scoreData.match.points.awayTeamPoints
-            } : null
-          };
+            updatedScores[match.id] = {
+              completedHoles,
+              totalHoles: adjustedTotalHoles,
+              completionPercent,
+              homeTeam: scoreData.match.homeTeam,
+              awayTeam: scoreData.match.awayTeam,
+              // Just use the player data directly - it already has the best data
+              homePlayers: playerData.homePlayers,
+              awayPlayers: playerData.awayPlayers,
+              format: scoreData.match.format,
+              result: scoreData.match.points ? {
+                homePoints: scoreData.match.points.homeTeamPoints,
+                awayPoints: scoreData.match.points.awayTeamPoints
+              } : null
+            };
+          } else {
+            // If we don't have score data but do have player data, still create an entry
+            if (playerData.homePlayers.length > 0 || playerData.awayPlayers.length > 0) {
+              console.log(`Match ${match.id} - No score data, but creating entry with ${playerData.homePlayers.length} home, ${playerData.awayPlayers.length} away players`);
+              
+              // Determine expected hole count based on starting hole
+              const expectedHoles = (match.startingHole === 1 || match.startingHole === 10) ? 9 : 18;
+              
+              updatedScores[match.id] = {
+                completedHoles: 0,
+                totalHoles: expectedHoles,
+                completionPercent: 0,
+                homeTeam: match.homeTeam,
+                awayTeam: match.awayTeam,
+                homePlayers: playerData.homePlayers,
+                awayPlayers: playerData.awayPlayers,
+                format: match.format
+              };
+            }
+          }
         });
         
         // Only update state if we have new data
@@ -366,7 +473,7 @@ export const ScorecardsTab: React.FC<ScorecardsTabProps> = ({
             All match scorecards. Click any match card to view and update scores.
           </p>
         </div>
-        <div className="mt-4 sm:ml-16 sm:mt-0 sm:flex-none">
+        <div className="mt-4 sm:ml-16 sm:mt-0 sm:flex-none flex space-x-3">
           <button
             type="button"
             onClick={() => refreshSchedules()}
@@ -375,6 +482,13 @@ export const ScorecardsTab: React.FC<ScorecardsTabProps> = ({
             <ArrowPathIcon className="h-5 w-5 text-gray-400 mr-1" aria-hidden="true" />
             Refresh
           </button>
+          <Link
+            href={`/tournaments/${tournamentId}/batch-assign`}
+            className="flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-indigo-600 shadow-sm ring-1 ring-inset ring-indigo-300 hover:bg-indigo-50"
+          >
+            <UsersIcon className="h-5 w-5 text-indigo-500 mr-1" aria-hidden="true" />
+            Batch Assign
+          </Link>
         </div>
       </div>
 
@@ -382,31 +496,35 @@ export const ScorecardsTab: React.FC<ScorecardsTabProps> = ({
       <div className="mb-6">
         <div className="border-b border-gray-200">
           <nav className="-mb-px flex space-x-4 overflow-x-auto" aria-label="Tabs">
-            {daysWithMatches.map((day: any, idx: number) => (
-              <a
+            {daysWithMatches.map((day: any) => (
+              <button
                 key={day.id}
-                href={`#day-${day.id}`}
+                onClick={() => setActiveDay(day.id)}
                 className={`whitespace-nowrap py-3 px-3 text-sm font-medium border-b-2 ${
-                  idx === 0 
+                  activeDay === day.id
                     ? 'border-primary text-primary' 
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                 }`}
+                type="button"
               >
                 {formatDate(day.date)}
-              </a>
+              </button>
             ))}
           </nav>
         </div>
       </div>
 
-      {/* Display matches organized by day */}
+      {/* Display matches for the active day only */}
       <div className="space-y-10">
         {daysWithMatches.map((scheduleDay: any, dayIndex: number) => {
+          // Only render the active day's content
+          if (scheduleDay.id !== activeDay) return null;
+          
           // Get all matches for the day
           const matches = scheduleDay.matches || [];
 
           return (
-            <div key={scheduleDay.id} id={`day-${scheduleDay.id}`} className="pt-4">
+            <div key={scheduleDay.id} className="pt-4">
               <h3 className="text-lg font-semibold text-gray-900 mb-4">
                 {formatDate(scheduleDay.date)}
                 <span className="text-sm font-normal text-gray-500 ml-2">
@@ -473,12 +591,18 @@ export const ScorecardsTab: React.FC<ScorecardsTabProps> = ({
                                 <div className="w-1/2 pr-2 border-r border-gray-200">
                                   <div className="text-green-600 font-medium mb-1">{match.homeTeam}</div>
                                   <ul className="text-xs text-gray-600 list-disc list-inside">
-                                    {homePlayers && homePlayers.length > 0 ? (
+                                    {homePlayers && Array.isArray(homePlayers) && homePlayers.length > 0 ? (
                                       homePlayers.map((player: any, idx: number) => {
                                         // Only log severe issues
                                         if (idx === 0 && !player) {
                                           console.error(`Missing home player data for match ${match.id}`);
                                         }
+                                        
+                                        // Debug the player object structure for the first player
+                                        if (idx === 0) {
+                                          console.log(`Home player [${idx}] for match ${match.id}:`, player);
+                                        }
+                                        
                                         // Handle player data format more reliably
                                         const playerName = 
                                           // Object with name property
@@ -506,12 +630,18 @@ export const ScorecardsTab: React.FC<ScorecardsTabProps> = ({
                                 <div className="w-1/2 pl-2">
                                   <div className="text-red-600 font-medium mb-1">{match.awayTeam}</div>
                                   <ul className="text-xs text-gray-600 list-disc list-inside">
-                                    {awayPlayers && awayPlayers.length > 0 ? (
+                                    {awayPlayers && Array.isArray(awayPlayers) && awayPlayers.length > 0 ? (
                                       awayPlayers.map((player: any, idx: number) => {
                                         // Only log severe issues
                                         if (idx === 0 && !player) {
                                           console.error(`Missing away player data for match ${match.id}`);
                                         }
+                                        
+                                        // Debug the player object structure for the first player
+                                        if (idx === 0) {
+                                          console.log(`Away player [${idx}] for match ${match.id}:`, player);
+                                        }
+                                        
                                         // Handle player data format more reliably
                                         const playerName = 
                                           // Object with name property
@@ -553,7 +683,12 @@ export const ScorecardsTab: React.FC<ScorecardsTabProps> = ({
                                     ></div>
                                   </div>
                                   <div className="text-xs mt-1">
-                                    {scoreData.completedHoles || 0}/{scoreData.totalHoles || (match.startingHole === 1 || match.startingHole === 10 ? 9 : 18)} holes
+                                    {scoreData.completedHoles || 0}/{
+                                      // Always show 9 holes for matches starting on hole 1 or 10, regardless of scoreData
+                                      (match.startingHole === 1 || match.startingHole === 10) ? 9 : 
+                                      // For other starting holes, use the data or default to 18
+                                      (scoreData.totalHoles || 18)
+                                    } holes
                                   </div>
                                 </div>
                                 

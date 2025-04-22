@@ -105,6 +105,26 @@ const BatchAssignPage: React.FC<BatchAssignPageProps> = ({ tournamentId }) => {
             </p>
           </div>
         )}
+        
+        {/* No players message */}
+        {assignments.length > 0 && 
+         assignments.every(match => 
+          (match.allHomePlayers?.length === 0 || match.allAwayPlayers?.length === 0)
+         ) && (
+          <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-6">
+            <div className="flex">
+              <div className="flex-shrink-0">
+                <ExclamationCircleIcon className="h-5 w-5 text-yellow-400" aria-hidden="true" />
+              </div>
+              <div className="ml-3">
+                <p className="text-sm text-yellow-700">
+                  No players available for teams. Please add players to teams before assigning them to matches. 
+                  Go to the Teams tab to add players to your teams.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Match assignments */}
         {assignments.length > 0 && (

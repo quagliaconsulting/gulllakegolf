@@ -1,5 +1,5 @@
 import React from 'react';
-import { ChevronRightIcon, ChevronDownIcon, UsersIcon } from '@heroicons/react/24/outline';
+import { ChevronRightIcon, ChevronDownIcon, UsersIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
 import { PlayerAssignment } from '../hooks/useBatchAssign';
 import PlayerSelectionList from './PlayerSelectionList';
 import SinglesMatchupBuilder from './SinglesMatchupBuilder';
@@ -67,12 +67,14 @@ const MatchAssignmentCard: React.FC<MatchAssignmentCardProps> = ({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* Home Team */}
             <div>
-              <h4 className="text-sm font-medium text-green-700 mb-2">
-                {match.homeTeam} Players
-              </h4>
+              <div className="flex justify-between items-center mb-2">
+                <h4 className="text-sm font-medium text-green-700">
+                  {match.homeTeam} Players
+                </h4>
+              </div>
               <PlayerSelectionList
-                players={match.allHomePlayers || []}
-                selectedIds={match.homePlayers || []}
+                players={Array.isArray(match.allHomePlayers) ? match.allHomePlayers : []}
+                selectedIds={Array.isArray(match.homePlayers) ? match.homePlayers : []}
                 onChange={(playerIds) => onPlayerChange(match.matchId, true, playerIds)}
                 requiredPlayers={match.requiredPlayers}
               />
@@ -80,12 +82,14 @@ const MatchAssignmentCard: React.FC<MatchAssignmentCardProps> = ({
             
             {/* Away Team */}
             <div>
-              <h4 className="text-sm font-medium text-red-700 mb-2">
-                {match.awayTeam} Players
-              </h4>
+              <div className="flex justify-between items-center mb-2">
+                <h4 className="text-sm font-medium text-red-700">
+                  {match.awayTeam} Players
+                </h4>
+              </div>
               <PlayerSelectionList
-                players={match.allAwayPlayers || []}
-                selectedIds={match.awayPlayers || []}
+                players={Array.isArray(match.allAwayPlayers) ? match.allAwayPlayers : []}
+                selectedIds={Array.isArray(match.awayPlayers) ? match.awayPlayers : []}
                 onChange={(playerIds) => onPlayerChange(match.matchId, false, playerIds)}
                 requiredPlayers={match.requiredPlayers}
                 teamColor="red"
@@ -100,9 +104,11 @@ const MatchAssignmentCard: React.FC<MatchAssignmentCardProps> = ({
                 Player-to-Player Matchups
               </h4>
               <SinglesMatchupBuilder
-                homePlayers={match.allHomePlayers.filter((p: any) => match.homePlayers.includes(p.id))}
-                awayPlayers={match.allAwayPlayers.filter((p: any) => match.awayPlayers.includes(p.id))}
-                matchups={match.playerMatchups || []}
+                homePlayers={Array.isArray(match.allHomePlayers) ? 
+                  match.allHomePlayers.filter((p: any) => Array.isArray(match.homePlayers) && match.homePlayers.includes(p.id)) : []}
+                awayPlayers={Array.isArray(match.allAwayPlayers) ? 
+                  match.allAwayPlayers.filter((p: any) => Array.isArray(match.awayPlayers) && match.awayPlayers.includes(p.id)) : []}
+                matchups={Array.isArray(match.playerMatchups) ? match.playerMatchups : []}
                 onChange={(matchups) => onSinglesMatchupChange(match.matchId, matchups)}
               />
             </div>

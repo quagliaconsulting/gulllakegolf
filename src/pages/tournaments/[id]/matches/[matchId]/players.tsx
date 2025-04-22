@@ -124,16 +124,27 @@ export default function AssignPlayers() {
     );
   };
   
-  // Auto-create matchups based on player order
+  // Auto-create matchups based on player handicaps
   const autoCreateMatchups = () => {
-    if (selectedHomePlayers.length !== 4 || selectedAwayPlayers.length !== 4) {
-      setError('Please select exactly 4 players from each team first');
+    if ((singlesMode === 'foursome' && (selectedHomePlayers.length !== 4 || selectedAwayPlayers.length !== 4)) ||
+        (singlesMode === 'standard' && (selectedHomePlayers.length !== 2 || selectedAwayPlayers.length !== 2))) {
+      setError('Please select the correct number of players from each team first');
       return;
     }
     
-    const newMatchups = selectedHomePlayers.map((homeId, index) => ({
-      homeId,
-      awayId: selectedAwayPlayers[index]
+    // Get all selected players with their data
+    const homePlayersData = data.allHomePlayers
+      .filter((p: any) => selectedHomePlayers.includes(p.id))
+      .sort((a: any, b: any) => (a.handicapIndex || 0) - (b.handicapIndex || 0));
+      
+    const awayPlayersData = data.allAwayPlayers
+      .filter((p: any) => selectedAwayPlayers.includes(p.id))
+      .sort((a: any, b: any) => (a.handicapIndex || 0) - (b.handicapIndex || 0));
+    
+    // Match players by handicap (lowest with lowest, etc.)
+    const newMatchups = homePlayersData.map((homePlayer: any, index) => ({
+      homeId: homePlayer.id,
+      awayId: awayPlayersData[index].id
     }));
     
     setPlayerMatchups(newMatchups);
@@ -564,7 +575,7 @@ export default function AssignPlayers() {
                         className="inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
                       >
                         <ArrowsRightLeftIcon className="h-4 w-4 mr-1" />
-                        Auto-Match Players
+                        Auto-Match by Handicap
                       </button>
                     </div>
                     
@@ -679,7 +690,7 @@ export default function AssignPlayers() {
                         onClick={autoCreateMatchups}
                         className="inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
                       >
-                        Auto-Match Players
+                        Auto-Match by Handicap
                       </button>
                     </div>
                     

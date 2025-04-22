@@ -34,8 +34,8 @@ export default function NewCourse() {
         });
         
         // Set tournaments from response
-        if (Array.isArray(response.data)) {
-          setTournaments(response.data);
+        if (response.data && response.data.success && Array.isArray(response.data.data)) {
+          setTournaments(response.data.data);
         } else {
           console.error('Unexpected response format:', response.data);
         }

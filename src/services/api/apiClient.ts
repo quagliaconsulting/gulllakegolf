@@ -97,7 +97,10 @@ export function useApi<T = any>(
   options?: SWRConfiguration
 ): SWRResponse<T, Error> {
   return useSWR<T, Error>(url, fetcher, {
-    revalidateOnFocus: false,
+    revalidateOnFocus: true,    // Enable revalidation when window gets focus
+    revalidateOnReconnect: true, // Enable when browser reconnects
+    dedupingInterval: 1000,     // Dedupe requests within 1 second (default is 2000)
+    errorRetryCount: 3,         // Retry failed requests 3 times
     ...options
   });
 }

@@ -75,9 +75,35 @@ export default function ScheduleBuilder() {
           axios.get('/api/formats', authHeaders)
         ]);
         
-        setTournaments(Array.isArray(tournamentsRes.data) ? tournamentsRes.data : []);
-        setCourses(Array.isArray(coursesRes.data) ? coursesRes.data : []);
-        setFormats(Array.isArray(formatsRes.data) ? formatsRes.data : []);
+        // Check for the new response format structure
+        if (tournamentsRes.data && tournamentsRes.data.success && Array.isArray(tournamentsRes.data.data)) {
+          setTournaments(tournamentsRes.data.data);
+        } else {
+          setTournaments(Array.isArray(tournamentsRes.data) ? tournamentsRes.data : []);
+        }
+        
+        // Check for the new response format structure for courses
+        console.log("Courses API response:", coursesRes.data);
+        if (coursesRes.data && coursesRes.data.success && coursesRes.data.data && coursesRes.data.data.courses) {
+          console.log("Using courses from data.data.courses");
+          setCourses(coursesRes.data.data.courses);
+        } else if (coursesRes.data && coursesRes.data.success && coursesRes.data.courses) {
+          console.log("Using courses from data.courses");
+          setCourses(coursesRes.data.courses);
+        } else if (Array.isArray(coursesRes.data)) {
+          console.log("Using courses from direct array");
+          setCourses(coursesRes.data);
+        } else {
+          console.error("Unable to extract courses from response");
+          setCourses([]);
+        }
+        
+        // Check for the new response format structure for formats
+        if (formatsRes.data && formatsRes.data.success && Array.isArray(formatsRes.data.data)) {
+          setFormats(formatsRes.data.data);
+        } else {
+          setFormats(Array.isArray(formatsRes.data) ? formatsRes.data : []);
+        }
       } catch (error) {
         console.error('Error fetching data:', error);
       }
@@ -101,35 +127,73 @@ export default function ScheduleBuilder() {
           }
         };
         
+        // Load tournament data
         const response = await axios.get(`/api/tournaments/${selectedTournamentId}`, authHeaders);
-        if (response.data?.tournament) {
-          const tournament = response.data.tournament;
-          setSelectedTournament(tournament);
+        
+        // Also fetch tournament-specific courses when tournament changes
+        try {
+          console.log("Fetching courses for tournament:", selectedTournamentId);
+          const coursesResponse = await axios.get(`/api/courses?tournamentId=${selectedTournamentId}`, authHeaders);
+          console.log("Tournament-specific courses response:", coursesResponse.data);
           
-          // Set tournament start date
-          if (tournament.startDate) {
-            const startDate = new Date(tournament.startDate);
-            // Use date without time component in ISO format (YYYY-MM-DD)
+          // Process course data
+          if (coursesResponse.data && coursesResponse.data.success && coursesResponse.data.data && coursesResponse.data.data.courses) {
+            console.log("Setting tournament-specific courses from data.data.courses");
+            setCourses(coursesResponse.data.data.courses);
+          } else if (coursesResponse.data && coursesResponse.data.success && coursesResponse.data.courses) {
+            console.log("Setting tournament-specific courses from data.courses");
+            setCourses(coursesResponse.data.courses);
+          } else if (Array.isArray(coursesResponse.data)) {
+            console.log("Setting tournament-specific courses from direct array");
+            setCourses(coursesResponse.data);
+          }
+        } catch (courseError) {
+          console.error("Error fetching tournament-specific courses:", courseError);
+        }
+        
+        // Handle both response formats
+        let tournament;
+        if (response.data?.success && response.data?.data) {
+          // New format
+          tournament = response.data.data;
+        } else if (response.data?.tournament) {
+          // Old format
+          tournament = response.data.tournament;
+        } else if (response.data?.id) {
+          // Direct tournament object
+          tournament = response.data;
+        } else {
+          console.error("Unexpected tournament response format:", response.data);
+          return;
+        }
+        
+        setSelectedTournament(tournament);
+        
+        // Set tournament start date
+        if (tournament.startDate) {
+          const startDate = new Date(tournament.startDate);
+          // Use date without time component in ISO format (YYYY-MM-DD)
+          setScheduleConfig(prev => ({
+            ...prev,
+            startDate: startDate.toISOString().split('T')[0]
+          }));
+          
+          // Determine number of days from tournament duration
+          if (tournament.endDate) {
+            const endDate = new Date(tournament.endDate);
+            const diffTime = Math.abs(endDate.getTime() - startDate.getTime());
+            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1; // +1 to include end day
+            
             setScheduleConfig(prev => ({
               ...prev,
-              startDate: startDate.toISOString().split('T')[0]
+              days: diffDays
             }));
-            
-            // Determine number of days from tournament duration
-            if (tournament.endDate) {
-              const endDate = new Date(tournament.endDate);
-              const diffTime = Math.abs(endDate.getTime() - startDate.getTime());
-              const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1; // +1 to include end day
-              
-              setScheduleConfig(prev => ({
-                ...prev,
-                days: diffDays
-              }));
-            }
-            
-            // Initialize tee time grid based on tournament duration
-            generateTimeGrid(startDate, tournament.endDate);
           }
+          
+          // Initialize tee time grid based on tournament duration
+          generateTimeGrid(startDate, tournament.endDate);
+        } else {
+          console.error("Tournament is missing startDate:", tournament);
         }
       } catch (error) {
         console.error('Error loading tournament details:', error);
@@ -141,26 +205,37 @@ export default function ScheduleBuilder() {
   
   // Generate array of time slots based on settings
   const generateTimeGrid = (startDate: Date, endDate: string) => {
-    if (!startDate) return;
+    console.log("Generating time grid with:", { startDate, endDate });
+    if (!startDate) {
+      console.error("Cannot generate time grid: startDate is null or undefined");
+      return;
+    }
     
     // Calculate number of days
     const end = new Date(endDate);
+    console.log("End date parsed as:", end);
     const dayDiff = Math.ceil(Math.abs(end.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+    console.log("Calculated day difference:", dayDiff);
     
     // Generate time slots for each day
     const grid = [];
     
+    console.log("Time settings:", timeSettings);
+    
     for (let day = 1; day <= dayDiff; day++) {
       const date = new Date(startDate);
       date.setDate(date.getDate() + (day - 1)); // Day 1 is start date
+      console.log(`Generating slots for day ${day}, date: ${date.toISOString()}`);
       
       // Parse start and end times
       const [startHour, startMinute] = timeSettings.startTime.split(':').map(Number);
       const [endHour, endMinute] = timeSettings.endTime.split(':').map(Number);
+      console.log("Time range:", { startHour, startMinute, endHour, endMinute });
       
       // Convert to minutes for easier calculation
       const startTotalMinutes = startHour * 60 + startMinute;
       const endTotalMinutes = endHour * 60 + endMinute;
+      console.log("Minutes range:", { startTotalMinutes, endTotalMinutes });
       
       // Create time slots
       const daySlots = [];
@@ -192,7 +267,14 @@ export default function ScheduleBuilder() {
       });
     }
     
-    setTeeTimeGrid(grid);
+    console.log("Setting tee time grid with", grid.length, "days and", 
+                grid.reduce((total, day) => total + day.slots.length, 0), "total time slots");
+    try {
+      setTeeTimeGrid(grid);
+      console.log("Tee time grid set successfully");
+    } catch (error) {
+      console.error("Error setting tee time grid:", error);
+    }
   };
   
   // Handle time settings change
@@ -207,7 +289,26 @@ export default function ScheduleBuilder() {
   
   // Filter courses for the selected tournament
   const filteredCourses = useMemo(() => {
-    return courses.filter(course => course.tournamentId === selectedTournamentId);
+    console.log("Filtering courses for tournament:", selectedTournamentId);
+    console.log("Available courses:", courses);
+    
+    // Check different possible structures for tournament ID
+    const filteredCourses = courses.filter(course => {
+      // Handle tournament ID as direct property
+      if (course.tournamentId === selectedTournamentId) {
+        return true;
+      }
+      
+      // Handle tournament ID inside tournament object
+      if (course.tournament && course.tournament.id === selectedTournamentId) {
+        return true;
+      }
+      
+      return false;
+    });
+    
+    console.log("Filtered courses:", filteredCourses);
+    return filteredCourses;
   }, [courses, selectedTournamentId]);
   
   // Update slot data
@@ -632,11 +733,21 @@ export default function ScheduleBuilder() {
                                           onChange={(e) => updateSlot(dayIndex, timeIndex, slotIndex, 'courseId', e.target.value)}
                                         >
                                           <option value="">Select course</option>
-                                          {filteredCourses.map(course => (
-                                            <option key={course.id} value={course.id}>
-                                              {course.name}
-                                            </option>
-                                          ))}
+                                          {filteredCourses.length === 0 && (
+                                            <option value="" disabled>No courses available for this tournament</option>
+                                          )}
+                                          {filteredCourses.map(course => {
+                                            // Check if course has necessary data
+                                            const displayName = course.name || 
+                                                              (course.tournament ? `Course for ${course.tournament.name}` : 
+                                                              'Unnamed Course');
+                                            
+                                            return (
+                                              <option key={course.id} value={course.id}>
+                                                {displayName}
+                                              </option>
+                                            );
+                                          })}
                                         </select>
                                       </div>
                                       

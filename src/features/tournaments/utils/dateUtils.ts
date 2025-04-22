@@ -2,16 +2,35 @@
 export function formatDate(dateString: string) {
   if (!dateString) return '';
   
-  // Create a date object and handle timezone issues
-  const date = new Date(dateString);
-  
-  // Format the date consistently with month/day/year
-  return date.toLocaleDateString('en-US', {
-    month: 'numeric',
-    day: 'numeric',
-    year: 'numeric',
-    timeZone: 'UTC' // Use UTC to avoid timezone shifts
-  });
+  try {
+    // Add logging to debug format issues
+    console.log(`Formatting date string: "${dateString}"`);
+    
+    // Create a date object and handle timezone issues
+    const date = new Date(dateString);
+    
+    // Check for invalid dates
+    if (isNaN(date.getTime())) {
+      console.error(`Invalid date: "${dateString}"`);
+      return dateString; // Return original string if invalid
+    }
+    
+    console.log(`Parsed date: ${date.toISOString()}`);
+    
+    // Format the date consistently with month/day/year
+    const formatted = date.toLocaleDateString('en-US', {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+      timeZone: 'UTC' // Use UTC to avoid timezone shifts
+    });
+    
+    console.log(`Formatted date: "${formatted}"`);
+    return formatted;
+  } catch (error) {
+    console.error(`Error formatting date "${dateString}":`, error);
+    return dateString; // Return original string if error
+  }
 }
 
 // Helper function to format ordinal numbers (1st, 2nd, 3rd, etc.)

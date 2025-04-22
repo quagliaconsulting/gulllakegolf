@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { StarIcon, FlagIcon, TrophyIcon } from '@heroicons/react/24/outline';
+import { getStrokesOnHole } from '@/utils/handicap';
 
 interface Player {
   id: string;
@@ -39,6 +40,45 @@ interface ScoreTableProps {
   openSkinsModal?: (hole: Hole) => void;
 }
 
+// Helper function to calculate player-level net scores
+const calculatePlayerNetScore = (gross: number, handicapIndex: number, holeHandicap: number): number | null => {
+  if (gross === null || gross === undefined) return null;
+  
+  // Calculate strokes for this player on this hole based on their handicap
+  const strokesOnHole = getStrokesOnHole(handicapIndex, holeHandicap);
+  
+  // Return gross score minus strokes for net score
+  return gross - strokesOnHole;
+};
+
+// Determines the winner of an individual player matchup in Singles format
+const determinePlayerMatchupWinner = (
+  homePlayerScore: number | null, 
+  homePlayerHandicap: number,
+  awayPlayerScore: number | null, 
+  awayPlayerHandicap: number,
+  holeHandicap: number
+): 'home' | 'away' | 'tie' | null => {
+  // If either score is null, we can't determine a winner
+  if (homePlayerScore === null || homePlayerScore === undefined || 
+      awayPlayerScore === null || awayPlayerScore === undefined) {
+    return null;
+  }
+  
+  // Calculate net scores for both players
+  const homeNetScore = homePlayerScore - getStrokesOnHole(homePlayerHandicap, holeHandicap);
+  const awayNetScore = awayPlayerScore - getStrokesOnHole(awayPlayerHandicap, holeHandicap);
+  
+  // Determine winner based on net scores (lower score wins in golf)
+  if (homeNetScore < awayNetScore) {
+    return 'home';
+  } else if (awayNetScore < homeNetScore) {
+    return 'away';
+  } else {
+    return 'tie';
+  }
+};
+
 export const ScoreTable: React.FC<ScoreTableProps> = ({
   match,
   scores,
@@ -58,6 +98,52 @@ export const ScoreTable: React.FC<ScoreTableProps> = ({
   // Determine format types for conditional rendering
   const isSinglesFormat = match.format?.toLowerCase().includes('singles');
   const isBestBallFormat = match.format?.toLowerCase().includes('best ball');
+  
+  // Check if this is a player-to-player match (explicit flag or has player-level scores)
+  // Always treat singles format as having individual matchups if players are assigned
+  const hasIndividualMatchups = match.playerToPlayerMatch || 
+    (isSinglesFormat && match.homePlayers?.length > 0 && match.awayPlayers?.length > 0);
+    
+  // Add debugging information in development mode
+  if (process.env.NODE_ENV === 'development' && isSinglesFormat) {
+    console.log('Singles format scorecard detected:', {
+      format: match.format,
+      isExplicitPlayerToPlayer: !!match.playerToPlayerMatch,
+      hasHomePlayers: !!match.homePlayers?.length,
+      homePlayerCount: match.homePlayers?.length || 0,
+      hasAwayPlayers: !!match.awayPlayers?.length,
+      awayPlayerCount: match.awayPlayers?.length || 0,
+      hasPlayerPairings: !!match.playerPairings?.length,
+      playerPairingsCount: match.playerPairings?.length || 0,
+      hasIndividualMatchups
+    });
+    
+    // Log home and away players when present
+    if (match.homePlayers?.length > 0) {
+      console.log('Home players:', match.homePlayers.map((p: any) => ({
+        id: p.id,
+        name: p.name,
+        handicap: p.handicapIndex
+      })));
+    }
+    
+    if (match.awayPlayers?.length > 0) {
+      console.log('Away players:', match.awayPlayers.map((p: any) => ({
+        id: p.id,
+        name: p.name, 
+        handicap: p.handicapIndex
+      })));
+    }
+    
+    // Log player pairings if available
+    if (match.playerPairings?.length > 0) {
+      console.log('Player pairings:', match.playerPairings.map((p: any) => ({
+        playerId: p.playerId,
+        isHomeTeam: p.isHomeTeam,
+        pairingGroup: p.pairingGroup
+      })));
+    }
+  }
   const isSinglesOrBestBall = isSinglesFormat || isBestBallFormat;
   if (!match || !holes || holes.length === 0) return null;
 
@@ -305,6 +391,13 @@ export const ScoreTable: React.FC<ScoreTableProps> = ({
                             disabled={lockStatus}
                             maxLength={3}
                           />
+                          
+                          {/* Display player net score for Singles format */}
+                          {isSinglesFormat && hole.homePlayerScores && hole.homePlayerScores[player.id] !== undefined && (
+                            <div className="text-xs font-medium mt-1 ml-1">
+                              Net: {calculatePlayerNetScore(hole.homePlayerScores[player.id], player.handicapIndex, hole.handicap)}
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>
@@ -328,13 +421,24 @@ export const ScoreTable: React.FC<ScoreTableProps> = ({
             </td>
           </tr>
 
-          {/* Home team net scores */}
+          {/* Home team net scores or Individual matchup results for Singles format */}
           <tr className="border-b bg-green-50">
             <td className="py-2 px-3 border font-medium text-green-600">
-              {match.homeTeam} (Net)
-              <div className="text-xs font-normal text-gray-500">
-                Handicap: {match.homeTeamHandicap.toFixed(1)}
-              </div>
+              {isSinglesFormat && hasIndividualMatchups ? (
+                <div>
+                  <div>{match.homeTeam} Players</div>
+                  <div className="text-xs font-normal text-gray-500">
+                    Individual results
+                  </div>
+                </div>
+              ) : (
+                <>
+                  {match.homeTeam} (Net)
+                  <div className="text-xs font-normal text-gray-500">
+                    Handicap: {match.homeTeamHandicap.toFixed(1)}
+                  </div>
+                </>
+              )}
             </td>
             {filteredHoles.map(hole => (
               <td 
@@ -344,10 +448,86 @@ export const ScoreTable: React.FC<ScoreTableProps> = ({
                   hole.winner === 'tie' ? 'bg-gray-100' : ''
                 }`}
               >
-                {hole.homeNet === null ? '-' : hole.homeNet}
-                {hole.winner === 'home' && (
+                {isSinglesFormat && hasIndividualMatchups ? (
+                  // For Singles format: Show individual matchup results
+                  <div className="flex flex-col space-y-1">
+                    {match.homePlayers.map((homePlayer: any, idx: number) => {
+                      // There are several ways to pair players:
+                      // 1. Use playerPairings and pairingGroup when available
+                      // 2. Fall back to array index when playerPairings not available
+                      // 3. Use name matching for manual pairing if needed
+                      
+                      // First try to find pairingGroup if playerPairings exists
+                      let pairingGroup = null;
+                      if (match.playerPairings && match.playerPairings.length > 0) {
+                        const homePairing = match.playerPairings.find((p: any) => 
+                          p.playerId === homePlayer.id && p.isHomeTeam
+                        );
+                        if (homePairing) {
+                          pairingGroup = homePairing.pairingGroup;
+                        }
+                      }
+                      
+                      // If pairingGroup not found, use array index as fallback
+                      if (pairingGroup === null) {
+                        pairingGroup = idx + 1;
+                      }
+                      
+                      // Then find the away player with the same pairingGroup
+                      const awayPlayer = match.awayPlayers.find((p: any) => {
+                        const pairingInfo = match.playerPairings?.find((pair: any) => 
+                          pair.playerId === p.id && !pair.isHomeTeam
+                        );
+                        return pairingInfo?.pairingGroup === pairingGroup;
+                      }) || (idx < match.awayPlayers.length ? match.awayPlayers[idx] : null);
+                      
+                      if (!homePlayer || !awayPlayer) return null;
+                      
+                      // Get player scores
+                      const homeScore = hole.homePlayerScores && hole.homePlayerScores[homePlayer.id];
+                      const awayScore = hole.awayPlayerScores && hole.awayPlayerScores[awayPlayer.id];
+                      
+                      // If we don't have scores for both players, show empty
+                      if (homeScore === undefined || awayScore === undefined) {
+                        return (
+                          <div key={`matchup-${homePlayer.id}-${hole.id}`} className="text-xs">-</div>
+                        );
+                      }
+                      
+                      // Determine matchup winner
+                      const matchupResult = determinePlayerMatchupWinner(
+                        homeScore,
+                        homePlayer.handicapIndex,
+                        awayScore,
+                        awayPlayer.handicapIndex,
+                        hole.handicap
+                      );
+                      
+                      return (
+                        <div key={`matchup-${homePlayer.id}-${hole.id}`} className="text-xs font-medium">
+                          {matchupResult === 'home' && (
+                            <span className="text-green-600 font-bold">W</span>
+                          )}
+                          {matchupResult === 'away' && (
+                            <span className="text-red-600 font-bold">L</span>
+                          )}
+                          {matchupResult === 'tie' && (
+                            <span className="text-gray-600 font-bold">T</span>
+                          )}
+                          {matchupResult === null && '-'}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  // For other formats: Show team net score
+                  <>{hole.homeNet === null ? '-' : hole.homeNet}</>
+                )}
+                
+                {hole.winner === 'home' && !isSinglesFormat && (
                   <StarIcon className="h-4 w-4 text-green-500 inline ml-1" />
                 )}
+                
                 {(potentialSkins[`home-${hole.number}`] || skinsWinners[`${hole.number}`]) && (
                   <button 
                     type="button" 
@@ -361,13 +541,77 @@ export const ScoreTable: React.FC<ScoreTableProps> = ({
                     />
                   </button>
                 )}
+                
                 {ctpWinners[hole.id] && match.homePlayers.some((p: any) => p.id === ctpWinners[hole.id]) && (
                   <FlagIcon className="h-4 w-4 text-green-500 inline ml-1" title="CTP Winner" />
                 )}
               </td>
             ))}
             <td className="py-2 px-3 border text-center font-medium">
-              {homeTotalNet || '-'}
+              {isSinglesFormat && hasIndividualMatchups ? (
+                // For Singles format: Show points
+                <div className="flex flex-col space-y-1">
+                  {match.homePlayers.map((homePlayer: any, idx: number) => {
+                    // There are several ways to pair players:
+                    // 1. Use playerPairings and pairingGroup when available
+                    // 2. Fall back to array index when playerPairings not available
+                    // 3. Use name matching for manual pairing if needed
+                    
+                    // First try to find pairingGroup if playerPairings exists
+                    let pairingGroup = null;
+                    if (match.playerPairings && match.playerPairings.length > 0) {
+                      const homePairing = match.playerPairings.find((p: any) => 
+                        p.playerId === homePlayer.id && p.isHomeTeam
+                      );
+                      if (homePairing) {
+                        pairingGroup = homePairing.pairingGroup;
+                      }
+                    }
+                    
+                    // If pairingGroup not found, use array index as fallback
+                    if (pairingGroup === null) {
+                      pairingGroup = idx + 1;
+                    }
+                    
+                    // Then find the away player with the same pairingGroup
+                    const awayPlayer = match.awayPlayers.find((p: any) => {
+                      const pairingInfo = match.playerPairings?.find((pair: any) => 
+                        pair.playerId === p.id && !pair.isHomeTeam
+                      );
+                      return pairingInfo?.pairingGroup === pairingGroup;
+                    }) || (idx < match.awayPlayers.length ? match.awayPlayers[idx] : null);
+                    
+                    if (!homePlayer || !awayPlayer) return null;
+                    
+                    // Calculate match points by counting hole wins/losses
+                    const homeWins = filteredHoles.filter(hole => {
+                      if (!hole.homePlayerScores || !hole.awayPlayerScores) return false;
+                      const homeScore = hole.homePlayerScores[homePlayer.id];
+                      const awayScore = hole.awayPlayerScores[awayPlayer.id];
+                      if (homeScore === undefined || awayScore === undefined) return false;
+                      
+                      const result = determinePlayerMatchupWinner(
+                        homeScore, homePlayer.handicapIndex, 
+                        awayScore, awayPlayer.handicapIndex, 
+                        hole.handicap
+                      );
+                      return result === 'home';
+                    }).length;
+                    
+                    // Only show points if we have scores
+                    if (homeWins === 0 && filteredHoles.length === 0) return null;
+                    
+                    return (
+                      <div key={`points-${homePlayer.id}`} className="text-xs font-medium">
+                        {homeWins} pts
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                // For other formats: Show total net
+                <>{homeTotalNet || '-'}</>
+              )}
             </td>
           </tr>
 
@@ -436,6 +680,13 @@ export const ScoreTable: React.FC<ScoreTableProps> = ({
                             disabled={lockStatus}
                             maxLength={3}
                           />
+                          
+                          {/* Display player net score for Singles format */}
+                          {isSinglesFormat && hole.awayPlayerScores && hole.awayPlayerScores[player.id] !== undefined && (
+                            <div className="text-xs font-medium mt-1 ml-1">
+                              Net: {calculatePlayerNetScore(hole.awayPlayerScores[player.id], player.handicapIndex, hole.handicap)}
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>
@@ -459,13 +710,24 @@ export const ScoreTable: React.FC<ScoreTableProps> = ({
             </td>
           </tr>
 
-          {/* Away team net scores */}
+          {/* Away team net scores or Individual matchup results for Singles format */}
           <tr className="border-b bg-red-50">
             <td className="py-2 px-3 border font-medium text-red-600">
-              {match.awayTeam} (Net)
-              <div className="text-xs font-normal text-gray-500">
-                Handicap: {match.awayTeamHandicap.toFixed(1)}
-              </div>
+              {isSinglesFormat && hasIndividualMatchups ? (
+                <div>
+                  <div>{match.awayTeam} Players</div>
+                  <div className="text-xs font-normal text-gray-500">
+                    Individual results
+                  </div>
+                </div>
+              ) : (
+                <>
+                  {match.awayTeam} (Net)
+                  <div className="text-xs font-normal text-gray-500">
+                    Handicap: {match.awayTeamHandicap.toFixed(1)}
+                  </div>
+                </>
+              )}
             </td>
             {filteredHoles.map(hole => (
               <td 
@@ -475,10 +737,86 @@ export const ScoreTable: React.FC<ScoreTableProps> = ({
                   hole.winner === 'tie' ? 'bg-gray-100' : ''
                 }`}
               >
-                {hole.awayNet === null ? '-' : hole.awayNet}
-                {hole.winner === 'away' && (
+                {isSinglesFormat && hasIndividualMatchups ? (
+                  // For Singles format: Show individual matchup results
+                  <div className="flex flex-col space-y-1">
+                    {match.awayPlayers.map((awayPlayer: any, idx: number) => {
+                      // There are several ways to pair players:
+                      // 1. Use playerPairings and pairingGroup when available
+                      // 2. Fall back to array index when playerPairings not available
+                      // 3. Use name matching for manual pairing if needed
+                      
+                      // First try to find pairingGroup if playerPairings exists
+                      let pairingGroup = null;
+                      if (match.playerPairings && match.playerPairings.length > 0) {
+                        const awayPairing = match.playerPairings.find((p: any) => 
+                          p.playerId === awayPlayer.id && !p.isHomeTeam
+                        );
+                        if (awayPairing) {
+                          pairingGroup = awayPairing.pairingGroup;
+                        }
+                      }
+                      
+                      // If pairingGroup not found, use array index as fallback
+                      if (pairingGroup === null) {
+                        pairingGroup = idx + 1;
+                      }
+                      
+                      // Then find the home player with the same pairingGroup
+                      const homePlayer = match.homePlayers.find((p: any) => {
+                        const pairingInfo = match.playerPairings?.find((pair: any) => 
+                          pair.playerId === p.id && pair.isHomeTeam
+                        );
+                        return pairingInfo?.pairingGroup === pairingGroup;
+                      }) || (idx < match.homePlayers.length ? match.homePlayers[idx] : null);
+                      
+                      if (!awayPlayer || !homePlayer) return null;
+                      
+                      // Get player scores
+                      const awayScore = hole.awayPlayerScores && hole.awayPlayerScores[awayPlayer.id];
+                      const homeScore = hole.homePlayerScores && hole.homePlayerScores[homePlayer.id];
+                      
+                      // If we don't have scores for both players, show empty
+                      if (awayScore === undefined || homeScore === undefined) {
+                        return (
+                          <div key={`matchup-${awayPlayer.id}-${hole.id}`} className="text-xs">-</div>
+                        );
+                      }
+                      
+                      // Determine matchup winner
+                      const matchupResult = determinePlayerMatchupWinner(
+                        homeScore,
+                        homePlayer.handicapIndex,
+                        awayScore,
+                        awayPlayer.handicapIndex,
+                        hole.handicap
+                      );
+                      
+                      return (
+                        <div key={`matchup-${awayPlayer.id}-${hole.id}`} className="text-xs font-medium">
+                          {matchupResult === 'away' && (
+                            <span className="text-green-600 font-bold">W</span>
+                          )}
+                          {matchupResult === 'home' && (
+                            <span className="text-red-600 font-bold">L</span>
+                          )}
+                          {matchupResult === 'tie' && (
+                            <span className="text-gray-600 font-bold">T</span>
+                          )}
+                          {matchupResult === null && '-'}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  // For other formats: Show team net score
+                  <>{hole.awayNet === null ? '-' : hole.awayNet}</>
+                )}
+                
+                {hole.winner === 'away' && !isSinglesFormat && (
                   <StarIcon className="h-4 w-4 text-red-500 inline ml-1" />
                 )}
+                
                 {(potentialSkins[`away-${hole.number}`] || skinsWinners[`${hole.number}`]) && (
                   <button 
                     type="button" 
@@ -492,13 +830,77 @@ export const ScoreTable: React.FC<ScoreTableProps> = ({
                     />
                   </button>
                 )}
+                
                 {ctpWinners[hole.id] && match.awayPlayers.some((p: any) => p.id === ctpWinners[hole.id]) && (
                   <FlagIcon className="h-4 w-4 text-green-500 inline ml-1" title="CTP Winner" />
                 )}
               </td>
             ))}
             <td className="py-2 px-3 border text-center font-medium">
-              {awayTotalNet || '-'}
+              {isSinglesFormat && hasIndividualMatchups ? (
+                // For Singles format: Show points
+                <div className="flex flex-col space-y-1">
+                  {match.awayPlayers.map((awayPlayer: any, idx: number) => {
+                    // There are several ways to pair players:
+                    // 1. Use playerPairings and pairingGroup when available
+                    // 2. Fall back to array index when playerPairings not available
+                    // 3. Use name matching for manual pairing if needed
+                    
+                    // First try to find pairingGroup if playerPairings exists
+                    let pairingGroup = null;
+                    if (match.playerPairings && match.playerPairings.length > 0) {
+                      const awayPairing = match.playerPairings.find((p: any) => 
+                        p.playerId === awayPlayer.id && !p.isHomeTeam
+                      );
+                      if (awayPairing) {
+                        pairingGroup = awayPairing.pairingGroup;
+                      }
+                    }
+                    
+                    // If pairingGroup not found, use array index as fallback
+                    if (pairingGroup === null) {
+                      pairingGroup = idx + 1;
+                    }
+                    
+                    // Then find the home player with the same pairingGroup
+                    const homePlayer = match.homePlayers.find((p: any) => {
+                      const pairingInfo = match.playerPairings?.find((pair: any) => 
+                        pair.playerId === p.id && pair.isHomeTeam
+                      );
+                      return pairingInfo?.pairingGroup === pairingGroup;
+                    }) || (idx < match.homePlayers.length ? match.homePlayers[idx] : null);
+                    
+                    if (!awayPlayer || !homePlayer) return null;
+                    
+                    // Calculate match points by counting hole wins/losses
+                    const awayWins = filteredHoles.filter(hole => {
+                      if (!hole.homePlayerScores || !hole.awayPlayerScores) return false;
+                      const homeScore = hole.homePlayerScores[homePlayer.id];
+                      const awayScore = hole.awayPlayerScores[awayPlayer.id];
+                      if (homeScore === undefined || awayScore === undefined) return false;
+                      
+                      const result = determinePlayerMatchupWinner(
+                        homeScore, homePlayer.handicapIndex, 
+                        awayScore, awayPlayer.handicapIndex, 
+                        hole.handicap
+                      );
+                      return result === 'away';
+                    }).length;
+                    
+                    // Only show points if we have scores
+                    if (awayWins === 0 && filteredHoles.length === 0) return null;
+                    
+                    return (
+                      <div key={`points-${awayPlayer.id}`} className="text-xs font-medium">
+                        {awayWins} pts
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                // For other formats: Show total net
+                <>{awayTotalNet || '-'}</>
+              )}
             </td>
           </tr>
 
@@ -506,11 +908,132 @@ export const ScoreTable: React.FC<ScoreTableProps> = ({
           <tr className="border-b bg-gray-100">
             <td className="py-2 px-3 border font-medium">Results</td>
             <td colSpan={filteredHoles.length} className="py-2 px-3 border">
-              <div className="flex justify-around text-sm">
-                <span className="text-green-600 font-medium">{match.homeTeam}: {homeWins} holes</span>
-                <span className="text-gray-600 font-medium">Tied: {ties} holes</span>
-                <span className="text-red-600 font-medium">{match.awayTeam}: {awayWins} holes</span>
-              </div>
+              {/* Different summary displays based on format type */}
+              {isSinglesFormat && hasIndividualMatchups ? (
+                /* Singles format match summary */
+                <div>
+                  <div className="text-sm font-medium mb-2">Individual Match Results</div>
+                  <div className="grid grid-cols-1 gap-2">
+                    {match.homePlayers.map((homePlayer: any, idx: number) => {
+                      // There are several ways to pair players:
+                      // 1. Use playerPairings and pairingGroup when available
+                      // 2. Fall back to array index when playerPairings not available
+                      // 3. Use name matching for manual pairing if needed
+                      
+                      // First try to find pairingGroup if playerPairings exists
+                      let pairingGroup = null;
+                      if (match.playerPairings && match.playerPairings.length > 0) {
+                        const homePairing = match.playerPairings.find((p: any) => 
+                          p.playerId === homePlayer.id && p.isHomeTeam
+                        );
+                        if (homePairing) {
+                          pairingGroup = homePairing.pairingGroup;
+                        }
+                      }
+                      
+                      // If pairingGroup not found, use array index as fallback
+                      if (pairingGroup === null) {
+                        pairingGroup = idx + 1;
+                      }
+                      
+                      // Then find the away player with the same pairingGroup
+                      const awayPlayer = match.awayPlayers.find((p: any) => {
+                        const pairingInfo = match.playerPairings?.find((pair: any) => 
+                          pair.playerId === p.id && !pair.isHomeTeam
+                        );
+                        return pairingInfo?.pairingGroup === pairingGroup;
+                      }) || (idx < match.awayPlayers.length ? match.awayPlayers[idx] : null);
+                      
+                      if (!homePlayer || !awayPlayer) return null;
+                      
+                      // Calculate hole wins for this matchup
+                      const matchupResults = filteredHoles.map(hole => {
+                        if (!hole.homePlayerScores || !hole.awayPlayerScores) return null;
+                        
+                        const homeScore = hole.homePlayerScores[homePlayer.id];
+                        const awayScore = hole.awayPlayerScores[awayPlayer.id];
+                        
+                        if (homeScore === undefined || awayScore === undefined) return null;
+                        
+                        return determinePlayerMatchupWinner(
+                          homeScore,
+                          homePlayer.handicapIndex,
+                          awayScore,
+                          awayPlayer.handicapIndex,
+                          hole.handicap
+                        );
+                      }).filter(Boolean); // Remove null values
+                      
+                      // Count wins for each player
+                      const homePlayerWins = matchupResults.filter(result => result === 'home').length;
+                      const awayPlayerWins = matchupResults.filter(result => result === 'away').length;
+                      const matchupTies = matchupResults.filter(result => result === 'tie').length;
+                      
+                      // Only show results if we have at least one hole with scores
+                      if (matchupResults.length === 0) return null;
+                      
+                      // Determine the match status
+                      let matchStatus = '';
+                      let statusStyle = '';
+                      
+                      if (homePlayerWins > awayPlayerWins) {
+                        matchStatus = 'Won';
+                        statusStyle = 'text-green-600';
+                      } else if (awayPlayerWins > homePlayerWins) {
+                        matchStatus = 'Lost';
+                        statusStyle = 'text-red-600';
+                      } else {
+                        matchStatus = 'Tied';
+                        statusStyle = 'text-gray-600';
+                      }
+                      
+                      return (
+                        <div key={`matchup-${homePlayer.id}-${awayPlayer.id}`} className="flex items-center justify-between border-b border-gray-200 pb-1 last:border-0">
+                          <div className="flex items-center">
+                            <span className="text-green-600 font-medium mr-1">{homePlayer.name}</span>
+                            <span className="text-gray-500 mx-1">vs</span>
+                            <span className="text-red-600 font-medium">{awayPlayer.name}</span>
+                          </div>
+                          <div className="flex items-center">
+                            <span className="font-medium mr-2">
+                              {homePlayerWins}-{awayPlayerWins}-{matchupTies}
+                            </span>
+                            <span className={`font-bold ${statusStyle}`}>{matchStatus}</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  
+                  {/* Team totals for Singles format */}
+                  <div className="mt-2 pt-2 border-t border-gray-300">
+                    <div className="flex justify-around text-sm mb-1">
+                      <span className="text-green-600 font-medium">{match.homeTeam}: {homeWins} holes</span>
+                      <span className="text-gray-600 font-medium">Tied: {ties} holes</span>
+                      <span className="text-red-600 font-medium">{match.awayTeam}: {awayWins} holes</span>
+                    </div>
+
+                    {/* Show the match points from the database if available */}
+                    {match.points && (
+                      <div className="flex justify-center text-sm font-medium mt-2">
+                        <div className="bg-gray-100 rounded-md px-3 py-1 inline-flex items-center">
+                          <span className="text-green-600 font-medium">{match.points.homeTeamPoints}</span>
+                          <span className="text-gray-500 mx-2">-</span>
+                          <span className="text-red-600 font-medium">{match.points.awayTeamPoints}</span>
+                          <span className="ml-2 text-gray-600">Match Points</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                /* Standard format match summary */
+                <div className="flex justify-around text-sm">
+                  <span className="text-green-600 font-medium">{match.homeTeam}: {homeWins} holes</span>
+                  <span className="text-gray-600 font-medium">Tied: {ties} holes</span>
+                  <span className="text-red-600 font-medium">{match.awayTeam}: {awayWins} holes</span>
+                </div>
+              )}
             </td>
             <td className="py-2 px-3 border"></td>
           </tr>

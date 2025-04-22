@@ -42,6 +42,10 @@ export default async function handler(
         return sendValidationError(res, 'Invalid hole data format');
       }
       
+      // Log the incoming data for debugging
+      console.log(`API received score updates for match ${id}:`, 
+                  JSON.stringify(holeResults, null, 2));
+      
       const result = await matchService.updateMatchScores(id, holeResults as HoleScoreUpdate[]);
       return sendSuccess(res, result, 200);
     } 

@@ -99,51 +99,63 @@ export function useBatchAssign(tournamentId: string | undefined) {
   // Initialize assignments when data loads
   useEffect(() => {
     if (scheduleData?.schedules) {
+      console.log("Schedule data loaded:", scheduleData);
       const matchesWithAssignmentData: PlayerAssignment[] = [];
       
       scheduleData.schedules.forEach((day: any) => {
-        day.matches.forEach((match: any) => {
-          // Only add matches that don't have a dayFilter set, or match the current filter
-          if (dayFilter === 'all' || day.id === dayFilter) {
-            matchesWithAssignmentData.push({
-              matchId: match.id,
-              homeTeam: match.homeTeam,
-              homeTeamId: match.homeTeamId,
-              awayTeam: match.awayTeam,
-              awayTeamId: match.awayTeamId,
-              format: match.format,
-              formatId: match.formatId,
-              courseId: match.courseId,
-              startingHole: match.startingHole,
-              teeTime: match.teeTime,
-              scheduleId: match.scheduleId,
-              homePlayers: [],
-              awayPlayers: [],
-              requiredPlayers: getRequiredPlayersByFormat(match.format),
-              allHomePlayers: [],
-              allAwayPlayers: [],
-              expanded: false,
-              isPairsFormat: isPairsFormat(match.format),
-              isFourManTeam: isFourManTeam(match.format),
-              isSingles: isSinglesFormat(match.format),
-              time: new Date(match.teeTime).toLocaleTimeString([], {
-                hour: '2-digit',
-                minute: '2-digit',
-                hour12: true,
-                timeZone: 'UTC',
-              }),
-              course: match.course,
-              needsMatchups: isSinglesFormat(match.format),
-              playerMatchups: []
-            });
-          }
-        });
+        console.log(`Processing day ${day.id} with ${day.matches?.length || 0} matches`);
+        
+        if (Array.isArray(day.matches)) {
+          day.matches.forEach((match: any) => {
+            // Only add matches that don't have a dayFilter set, or match the current filter
+            if (dayFilter === 'all' || day.id === dayFilter) {
+              console.log(`Adding match ${match.id}: ${match.homeTeam} vs ${match.awayTeam}`);
+              
+              matchesWithAssignmentData.push({
+                matchId: match.id,
+                homeTeam: match.homeTeam,
+                homeTeamId: match.homeTeamId,
+                awayTeam: match.awayTeam,
+                awayTeamId: match.awayTeamId,
+                format: match.format,
+                formatId: match.formatId,
+                courseId: match.courseId,
+                startingHole: match.startingHole,
+                teeTime: match.teeTime,
+                scheduleId: match.scheduleId,
+                homePlayers: [],
+                awayPlayers: [],
+                requiredPlayers: getRequiredPlayersByFormat(match.format),
+                allHomePlayers: [],
+                allAwayPlayers: [],
+                expanded: false,
+                isPairsFormat: isPairsFormat(match.format),
+                isFourManTeam: isFourManTeam(match.format),
+                isSingles: isSinglesFormat(match.format),
+                time: new Date(match.teeTime).toLocaleTimeString([], {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                  hour12: true,
+                  timeZone: 'UTC',
+                }),
+                course: match.course,
+                needsMatchups: isSinglesFormat(match.format),
+                playerMatchups: []
+              });
+            }
+          });
+        } else {
+          console.warn(`Day ${day.id} has no matches array`);
+        }
       });
       
+      console.log(`Created ${matchesWithAssignmentData.length} match assignments`);
       setAssignments(matchesWithAssignmentData);
       
       // Get current player assignments
       loadCurrentPlayerAssignments(matchesWithAssignmentData);
+    } else {
+      console.warn("No schedule data available");
     }
   }, [scheduleData, dayFilter]);
 
@@ -157,37 +169,144 @@ export function useBatchAssign(tournamentId: string | undefined) {
         const response = await fetch(`/api/matches/${match.matchId}/players`);
         
         if (response.ok) {
-          const data = await response.json();
+          const rawResponse = await response.json();
           
-          if (data.homePlayers && data.awayPlayers) {
-            match.allHomePlayers = data.homePlayers;
-            match.allAwayPlayers = data.awayPlayers;
+          // Handle the API response format - our API wrapper uses success: true, data: {...}
+          // but direct fetch doesn't unwrap this
+          const data = rawResponse.success === true ? rawResponse.data : rawResponse;
+          
+          console.log(`API direct response format for match ${match.matchId}:`, rawResponse);
+          console.log(`API response for match ${match.matchId}:`, {
+            homeTeam: match.homeTeam,
+            awayTeam: match.awayTeam,
+            homePlayersCount: data.homePlayers?.length || 0,
+            awayPlayersCount: data.awayPlayers?.length || 0,
+            allHomePlayersCount: Array.isArray(data.allHomePlayers) ? data.allHomePlayers.length : 0,
+            allAwayPlayersCount: Array.isArray(data.allAwayPlayers) ? data.allAwayPlayers.length : 0,
+            // Add sample player data to verify structure
+            homePlayerSample: Array.isArray(data.allHomePlayers) && data.allHomePlayers.length > 0 ? data.allHomePlayers[0] : null,
+            awayPlayerSample: Array.isArray(data.allAwayPlayers) && data.allAwayPlayers.length > 0 ? data.allAwayPlayers[0] : null,
+            // Debug the raw data
+            dataKeys: Object.keys(data)
+          });
+          
+          // First log the full data structure
+          console.log(`Full API data for match ${match.matchId}:`, data);
+          
+          // Get available players (all players from both teams)
+          try {
+            // Extract the actual data from the API response
+            // If response has success:true wrapper, use data.data structure
+            const responseData = data.success === true ? data.data : data;
             
-            // Set already assigned players
-            match.homePlayers = data.homePlayers
-              .filter((p: any) => p.isAssigned)
-              .map((p: any) => p.id);
+            // The API returns players with complete objects including IDs
+            if (responseData && responseData.allHomePlayers && Array.isArray(responseData.allHomePlayers)) {
+              match.allHomePlayers = [...responseData.allHomePlayers]; 
+              console.log(`Found ${responseData.allHomePlayers.length} home players for match ${match.matchId}`);
               
-            match.awayPlayers = data.awayPlayers
-              .filter((p: any) => p.isAssigned)
-              .map((p: any) => p.id);
+              // Debug player info
+              if (responseData.allHomePlayers.length > 0) {
+                const samplePlayer = responseData.allHomePlayers[0];
+                console.log(`Home player sample: ID=${samplePlayer.id}, Name=${samplePlayer.name}`);
+              }
+            } else {
+              match.allHomePlayers = [];
+              console.log(`No home players found in API response for match ${match.matchId}`);
+            }
+            
+            // Same for away players
+            if (responseData && responseData.allAwayPlayers && Array.isArray(responseData.allAwayPlayers)) {
+              match.allAwayPlayers = [...responseData.allAwayPlayers];
+              console.log(`Found ${responseData.allAwayPlayers.length} away players for match ${match.matchId}`);
               
-            // For singles format, also set up the player matchups
-            if (match.isSingles && data.pairingGroups) {
-              match.playerMatchups = [];
+              // Debug player info
+              if (responseData.allAwayPlayers.length > 0) {
+                const samplePlayer = responseData.allAwayPlayers[0];
+                console.log(`Away player sample: ID=${samplePlayer.id}, Name=${samplePlayer.name}`);
+              }
+            } else {
+              match.allAwayPlayers = [];
+              console.log(`No away players found in API response for match ${match.matchId}`);
+            }
+            
+            // Log player counts after assignment
+            console.log(`After processing, match ${match.matchId} has ${match.allHomePlayers.length} home players and ${match.allAwayPlayers.length} away players`);
+            
+          } catch (err) {
+            console.error(`Error processing player data for match ${match.matchId}:`, err);
+            match.allHomePlayers = [];
+            match.allAwayPlayers = [];
+          }
+          
+          // Get currently assigned players, handling nested data structure
+          let assignedHomePlayers: any[] = [];
+          let assignedAwayPlayers: any[] = [];
+          
+          // Extract the actual data from the API response
+          const responseData = data.success === true ? data.data : data;
+          
+          if (responseData && responseData.homePlayers) {
+            assignedHomePlayers = responseData.homePlayers;
+          }
+          
+          if (responseData && responseData.awayPlayers) {
+            assignedAwayPlayers = responseData.awayPlayers;
+          }
+          
+          // Ensure we have arrays we can work with
+          if (!Array.isArray(assignedHomePlayers)) assignedHomePlayers = [];
+          if (!Array.isArray(assignedAwayPlayers)) assignedAwayPlayers = [];
+          
+          console.log(`Assigned players (before mapping): ${assignedHomePlayers.length} home, ${assignedAwayPlayers.length} away`);
+          
+          // Only map the IDs if we have player objects with IDs
+          if (assignedHomePlayers.length > 0 && typeof assignedHomePlayers[0] === 'object' && assignedHomePlayers[0].id) {
+            match.homePlayers = assignedHomePlayers.map((p: any) => p.id);
+          } else if (Array.isArray(assignedHomePlayers) && assignedHomePlayers.every((id: any) => typeof id === 'string')) {
+            // If they're already IDs, use as is
+            match.homePlayers = assignedHomePlayers;
+          } else {
+            match.homePlayers = [];
+          }
+          
+          if (assignedAwayPlayers.length > 0 && typeof assignedAwayPlayers[0] === 'object' && assignedAwayPlayers[0].id) {
+            match.awayPlayers = assignedAwayPlayers.map((p: any) => p.id);
+          } else if (Array.isArray(assignedAwayPlayers) && assignedAwayPlayers.every((id: any) => typeof id === 'string')) {
+            // If they're already IDs, use as is
+            match.awayPlayers = assignedAwayPlayers;
+          } else {
+            match.awayPlayers = [];
+          }
+          
+          console.log(`Assigned players (after mapping): ${match.homePlayers.length} home, ${match.awayPlayers.length} away`);
+              
+          // For singles format, also set up the player matchups
+          // Use the responseData here too for consistency
+          if (match.isSingles) {
+            match.playerMatchups = [];
+            
+            if (responseData && Array.isArray(responseData.pairingGroups) && responseData.pairingGroups.length > 0) {
+              console.log(`Found ${responseData.pairingGroups.length} pairing groups for match ${match.matchId}`);
               
               // Find the pairings
-              for (const group of data.pairingGroups) {
-                const homePlayersInGroup = data.homePlayersByGroup?.[group] || [];
-                const awayPlayersInGroup = data.awayPlayersByGroup?.[group] || [];
+              for (const group of responseData.pairingGroups) {
+                const homeGroup = responseData.homePlayersByGroup ? responseData.homePlayersByGroup[group] : null;
+                const awayGroup = responseData.awayPlayersByGroup ? responseData.awayPlayersByGroup[group] : null;
+                
+                const homePlayersInGroup = Array.isArray(homeGroup) ? homeGroup : [];
+                const awayPlayersInGroup = Array.isArray(awayGroup) ? awayGroup : [];
                 
                 if (homePlayersInGroup.length === 1 && awayPlayersInGroup.length === 1) {
                   match.playerMatchups.push({
                     homeId: homePlayersInGroup[0].id,
                     awayId: awayPlayersInGroup[0].id
                   });
+                  
+                  console.log(`Added matchup between ${homePlayersInGroup[0].name} and ${awayPlayersInGroup[0].name}`);
                 }
               }
+            } else {
+              console.log(`No pairing groups found for singles match ${match.matchId}`);
             }
           }
         }
@@ -304,7 +423,10 @@ export function useBatchAssign(tournamentId: string | undefined) {
           
           // For singles format, include pairings
           if (match.isSingles && match.playerMatchups?.length) {
-            payload.playerPairings = match.playerMatchups;
+            payload.pairings = match.playerMatchups.map(matchup => ({
+              homePlayerId: matchup.homeId,
+              awayPlayerId: matchup.awayId
+            }));
           }
           
           assignmentPayloads.push(payload);
@@ -317,11 +439,23 @@ export function useBatchAssign(tournamentId: string | undefined) {
         return;
       }
       
+      // Get JWT token from localStorage for authentication
+      let headers = {
+        'Content-Type': 'application/json',
+      };
+      
+      // Add authorization token if available
+      if (typeof window !== 'undefined') {
+        const token = localStorage.getItem('token');
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
+        }
+      }
+      
+      console.log('Sending batch assignment with auth token');
       const response = await fetch('/api/matches/batch-assign', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers,
         body: JSON.stringify({ assignments: assignmentPayloads }),
       });
       

@@ -8,6 +8,7 @@ import {
   PencilIcon,
   TableCellsIcon,
   ArrowLeftIcon,
+  UsersIcon,
 } from '@heroicons/react/24/outline';
 
 interface TournamentHeaderProps {

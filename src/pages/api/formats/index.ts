@@ -14,13 +14,31 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     : req.cookies?.token;
 
   if (!token) {
-    return res.status(401).json({ error: 'Authentication required' });
+    return res.status(401).json({
+      success: false,
+      error: 'Authentication required',
+      statusCode: 401
+    });
   }
 
   try {
-    // Verify token with better error handling
-    if (!verifyToken(token, res)) {
-      return; // Response already sent by verifyToken
+    // Debug log for verification
+    console.log('--- verifyToken --- ');
+    console.log('Token string received (first 10): ', token.substring(0, 10));
+    console.log('Token string received (last 10): ', token.substring(token.length - 10));
+    console.log('JWT_SECRET from process.env:', process.env.JWT_SECRET);
+    
+    try {
+      // Attempt verification
+      const verified = jwt.verify(token, JWT_SECRET);
+      console.log('Token verification successful.');
+    } catch (verifyError) {
+      console.error('Token verification failed:', verifyError);
+      return res.status(401).json({
+        success: false,
+        error: 'Invalid authentication token',
+        statusCode: 401
+      });
     }
     
     if (req.method === 'GET') {
@@ -40,13 +58,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         }
       });
       
-      return res.status(200).json(formats);
+      return res.status(200).json({
+        success: true,
+        data: formats,
+        statusCode: 200
+      });
     } else if (req.method === 'POST') {
       const { formatName, multiplier, isFourManTeam, tournamentId } = req.body;
       
       // Validate required fields
       if (!formatName || multiplier === undefined || !tournamentId) {
-        return res.status(400).json({ error: 'Format name, multiplier, and tournament ID are required' });
+        return res.status(400).json({ 
+          success: false,
+          error: 'Format name, multiplier, and tournament ID are required',
+          statusCode: 400
+        });
       }
       
       // Check if tournament exists
@@ -55,7 +81,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       });
       
       if (!tournament) {
-        return res.status(404).json({ error: 'Tournament not found' });
+        return res.status(404).json({
+          success: false,
+          error: 'Tournament not found',
+          statusCode: 404
+        });
       }
       
       // Create new format multiplier
@@ -68,13 +98,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         }
       });
       
-      return res.status(201).json(format);
+      return res.status(201).json({
+        success: true,
+        data: format,
+        statusCode: 201
+      });
     } else if (req.method === 'PUT') {
       const { id, formatName, multiplier, isFourManTeam } = req.body;
       
       // Validate required fields
       if (!id || !formatName || multiplier === undefined) {
-        return res.status(400).json({ error: 'Format ID, name, and multiplier are required' });
+        return res.status(400).json({
+          success: false,
+          error: 'Format ID, name, and multiplier are required',
+          statusCode: 400
+        });
       }
       
       // Check if format exists
@@ -83,7 +121,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       });
       
       if (!existingFormat) {
-        return res.status(404).json({ error: 'Format not found' });
+        return res.status(404).json({
+          success: false,
+          error: 'Format not found',
+          statusCode: 404
+        });
       }
       
       // Update format multiplier
@@ -96,13 +138,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         }
       });
       
-      return res.status(200).json(updatedFormat);
+      return res.status(200).json({
+        success: true,
+        data: updatedFormat,
+        statusCode: 200
+      });
     } else if (req.method === 'DELETE') {
       const { id } = req.query;
       
       // Validate required fields
       if (!id) {
-        return res.status(400).json({ error: 'Format ID is required' });
+        return res.status(400).json({
+          success: false,
+          error: 'Format ID is required',
+          statusCode: 400
+        });
       }
       
       // Check if format exists
@@ -111,7 +161,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       });
       
       if (!existingFormat) {
-        return res.status(404).json({ error: 'Format not found' });
+        return res.status(404).json({
+          success: false,
+          error: 'Format not found',
+          statusCode: 404
+        });
       }
       
       // Check if format is used in any matches
@@ -121,8 +175,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       });
       
       if (matches.length > 0) {
-        return res.status(400).json({ 
-          error: 'Cannot delete format that is used in matches. Please remove all matches using this format first.' 
+        return res.status(400).json({
+          success: false,
+          error: 'Cannot delete format that is used in matches. Please remove all matches using this format first.',
+          statusCode: 400
         });
       }
       
@@ -131,13 +187,25 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         where: { id: id as string }
       });
       
-      return res.status(204).send(null);
+      return res.status(200).json({
+        success: true,
+        data: { message: "Format deleted successfully" },
+        statusCode: 200
+      });
     }
     
     // Method not allowed
-    return res.status(405).json({ error: 'Method not allowed' });
+    return res.status(405).json({
+      success: false,
+      error: 'Method not allowed',
+      statusCode: 405
+    });
   } catch (error) {
     console.error('API error:', error);
-    return res.status(500).json({ error: 'Internal server error' });
+    return res.status(500).json({
+      success: false,
+      error: 'Internal server error',
+      statusCode: 500
+    });
   }
 }
