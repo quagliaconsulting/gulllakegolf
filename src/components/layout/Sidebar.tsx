@@ -104,7 +104,7 @@ function TournamentCountdownMini({ targetDate, status }: { targetDate: string, s
   
   return (
     <div className={`flex items-center text-xs font-medium rounded-full px-2 py-0.5 ${
-      status === 'upcoming' ? 'bg-blue-100 text-blue-800' : 
+      status === 'upcoming' ? 'bg-green-100 text-green-800' : 
       status === 'active' ? 'bg-green-100 text-green-800' : 
       'bg-gray-100 text-gray-800'
     }`}>
@@ -119,18 +119,37 @@ export default function Sidebar({ sidebarOpen, setSidebarOpen }: SidebarProps) {
   const { user, logout, loading } = useAuth();
   
   // Fetch active tournament with teams
-  const { data: activeTournament } = useSWR(
+  const { data: activeTournamentResponse } = useSWR(
     '/api/tournaments?status=active&limit=1&include=teams',
     fetcher,
     { revalidateOnFocus: false, refreshInterval: 300000 } // 5 min refresh
   );
   
   // Fetch upcoming tournament with teams
-  const { data: upcomingTournament } = useSWR(
+  const { data: upcomingTournamentResponse } = useSWR(
     '/api/tournaments?status=upcoming&limit=1&include=teams',
     fetcher,
     { revalidateOnFocus: false, refreshInterval: 300000 } // 5 min refresh
   );
+  
+  // Extract tournament data from response, handling multiple response formats
+  const getDataFromResponse = (response: any) => {
+    if (!response) return null;
+    
+    // Handle different response formats
+    if (response.success && response.data) {
+      // New format
+      return Array.isArray(response.data) ? response.data : [response.data];
+    } else if (Array.isArray(response)) {
+      // Old format (direct array)
+      return response;
+    }
+    
+    return null;
+  };
+  
+  const activeTournament = getDataFromResponse(activeTournamentResponse);
+  const upcomingTournament = getDataFromResponse(upcomingTournamentResponse);
   
   // Get the tournament to display in sidebar
   const featuredTournament = activeTournament?.length > 0 ? 
@@ -173,9 +192,19 @@ export default function Sidebar({ sidebarOpen, setSidebarOpen }: SidebarProps) {
                 <div>
                   <span className="block font-bold text-primary text-lg leading-tight">GULL LAKE</span>
                   <div className="flex space-x-1 text-xs">
-                    <span className="text-forest-green font-medium">Spartan Dawgs</span> 
-                    <span className="text-gray-500">vs</span> 
-                    <span className="text-blue-700 font-medium">Invited Guests</span>
+                    {featuredTournament?.data?.teams && Array.isArray(featuredTournament.data.teams) && featuredTournament.data.teams.length >= 2 ? (
+                      <>
+                        <span className="text-green-700 font-medium">
+                          {typeof featuredTournament.data.teams[0] === 'object' ? featuredTournament.data.teams[0].name : featuredTournament.data.teams[0]}
+                        </span>
+                        <span className="text-gray-500">vs</span>
+                        <span className="text-red-700 font-medium">
+                          {typeof featuredTournament.data.teams[1] === 'object' ? featuredTournament.data.teams[1].name : featuredTournament.data.teams[1]}
+                        </span>
+                      </>
+                    ) : (
+                      <span className="text-gray-500">Golf Tournament</span>
+                    )}
                   </div>
                 </div>
               </Link>
@@ -258,7 +287,19 @@ export default function Sidebar({ sidebarOpen, setSidebarOpen }: SidebarProps) {
                   <Link href="/" onClick={() => setSidebarOpen(false)} passHref legacyBehavior={false}>
                     <div>
                       <span className="block h-8 w-auto font-bold text-primary text-xl">GULL LAKE</span>
-                      <span className="block text-xs"><span className="text-forest-green font-medium">Spartan Dawgs</span> <span className="text-gray-500">vs. Invited Guests</span></span>
+                      <span className="block text-xs">
+                        {featuredTournament?.data?.teams && Array.isArray(featuredTournament.data.teams) && featuredTournament.data.teams.length >= 2 ? (
+                          <>
+                            <span className="text-green-700 font-medium">
+                              {typeof featuredTournament.data.teams[0] === 'object' ? featuredTournament.data.teams[0].name : featuredTournament.data.teams[0]}
+                            </span> <span className="text-gray-500">vs.</span> <span className="text-red-700 font-medium">
+                              {typeof featuredTournament.data.teams[1] === 'object' ? featuredTournament.data.teams[1].name : featuredTournament.data.teams[1]}
+                            </span>
+                          </>
+                        ) : (
+                          <span className="text-gray-500">Golf Tournament</span>
+                        )}
+                      </span>
                     </div>
                   </Link>
                 </div>
@@ -358,8 +399,8 @@ export default function Sidebar({ sidebarOpen, setSidebarOpen }: SidebarProps) {
                                         key={teamName}
                                         className={`text-xs rounded-full px-2 py-0.5 ${
                                           teamName === 'Spartan Dawgs' ? 
-                                          'bg-green-100 text-forest-green' : 
-                                          'bg-blue-100 text-blue-700'
+                                          'bg-green-100 text-green-700' : 
+                                          'bg-red-100 text-red-700'
                                         }`}
                                       >
                                         {teamName}
@@ -369,10 +410,10 @@ export default function Sidebar({ sidebarOpen, setSidebarOpen }: SidebarProps) {
                                   : 
                                   // Fallback when teams array is empty or not available
                                   <>
-                                    <span className="text-xs rounded-full px-2 py-0.5 bg-green-100 text-forest-green">
+                                    <span className="text-xs rounded-full px-2 py-0.5 bg-green-100 text-green-700">
                                       Spartan Dawgs
                                     </span>
-                                    <span className="text-xs rounded-full px-2 py-0.5 bg-blue-100 text-blue-700">
+                                    <span className="text-xs rounded-full px-2 py-0.5 bg-red-100 text-red-700">
                                       Invited Guests
                                     </span>
                                   </>
@@ -463,7 +504,19 @@ export default function Sidebar({ sidebarOpen, setSidebarOpen }: SidebarProps) {
             <Link href="/" passHref legacyBehavior={false}>
               <div>
                 <span className="block h-8 w-auto font-bold text-primary text-xl">GULL LAKE</span>
-                <span className="block text-xs"><span className="text-forest-green font-medium">Spartan Dawgs</span> <span className="text-gray-500">vs. Invited Guests</span></span>
+                <span className="block text-xs">
+                  {featuredTournament?.data?.teams && Array.isArray(featuredTournament.data.teams) && featuredTournament.data.teams.length >= 2 ? (
+                    <>
+                      <span className="text-green-700 font-medium">
+                        {typeof featuredTournament.data.teams[0] === 'object' ? featuredTournament.data.teams[0].name : featuredTournament.data.teams[0]}
+                      </span> <span className="text-gray-500">vs.</span> <span className="text-red-700 font-medium">
+                        {typeof featuredTournament.data.teams[1] === 'object' ? featuredTournament.data.teams[1].name : featuredTournament.data.teams[1]}
+                      </span>
+                    </>
+                  ) : (
+                    <span className="text-gray-500">Golf Tournament</span>
+                  )}
+                </span>
               </div>
             </Link>
             <Link
@@ -538,8 +591,8 @@ export default function Sidebar({ sidebarOpen, setSidebarOpen }: SidebarProps) {
                                   key={teamName}
                                   className={`text-xs rounded-full px-2 py-0.5 ${
                                     teamName === 'Spartan Dawgs' ? 
-                                    'bg-green-100 text-forest-green' : 
-                                    'bg-blue-100 text-blue-700'
+                                    'bg-green-100 text-green-700' : 
+                                    'bg-red-100 text-red-700'
                                   }`}
                                 >
                                   {teamName}
@@ -549,10 +602,10 @@ export default function Sidebar({ sidebarOpen, setSidebarOpen }: SidebarProps) {
                             : 
                             // Fallback when teams array is empty or not available
                             <>
-                              <span className="text-xs rounded-full px-2 py-0.5 bg-green-100 text-forest-green">
+                              <span className="text-xs rounded-full px-2 py-0.5 bg-green-100 text-green-700">
                                 Spartan Dawgs
                               </span>
-                              <span className="text-xs rounded-full px-2 py-0.5 bg-blue-100 text-blue-700">
+                              <span className="text-xs rounded-full px-2 py-0.5 bg-red-100 text-red-700">
                                 Invited Guests
                               </span>
                             </>

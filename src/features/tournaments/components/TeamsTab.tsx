@@ -49,8 +49,8 @@ export const TeamsTab: React.FC<TeamsTabProps> = ({ tournament, tournamentId }) 
     );
   }
 
-  const homeTeams = tournament.teams.filter(isHomeTeam);
-  const awayTeams = tournament.teams.filter(team => !isHomeTeam(team));
+  const homeTeams = tournament.teams.filter((team: any) => isHomeTeam(team));
+  const awayTeams = tournament.teams.filter((team: any) => !isHomeTeam(team));
 
   return (
     <div className="space-y-8">
@@ -83,7 +83,7 @@ export const TeamsTab: React.FC<TeamsTabProps> = ({ tournament, tournamentId }) 
                   onClick={() => toggleTeamExpansion(team.id)}
                 >
                   <div className="flex items-center">
-                    <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold">
+                    <div className="h-10 w-10 rounded-full bg-green-100 flex items-center justify-center text-green-600 font-bold">
                       {team.name.substring(0, 2).toUpperCase()}
                     </div>
                     <div className="ml-4">

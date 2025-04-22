@@ -21,7 +21,18 @@ export default function CoursesPage() {
       try {
         const response = await axios.get(url);
         setShowError(false);
-        return response.data;
+        
+        // Handle different response formats
+        if (response.data.success && response.data.data) {
+          // New API format with success/data wrapper
+          return response.data.data;
+        } else if (Array.isArray(response.data)) {
+          // Old format (direct array)
+          return { courses: response.data };
+        } else {
+          // Assume it's in the expected format already
+          return response.data;
+        }
       } catch (error) {
         // Don't show error state for 404s
         if (axios.isAxiosError(error) && error.response?.status === 404) {
@@ -54,12 +65,19 @@ export default function CoursesPage() {
         console.log('Courses API response:', response.data);
         
         if (response.data) {
-          // Check if data is already in expected format
-          if (Array.isArray(response.data.courses)) {
+          // Handle different API response formats
+          if (response.data.success && response.data.data && response.data.data.courses) {
+            // New API format with success/data/courses
+            mutate({ courses: response.data.data.courses }, false);
+          } else if (Array.isArray(response.data.courses)) {
+            // Format: { courses: [...] }
             mutate({ courses: response.data.courses }, false);
           } else if (Array.isArray(response.data)) {
-            // If data is an array, wrap it
+            // Format: [...]
             mutate({ courses: response.data }, false);
+          } else if (response.data.success && Array.isArray(response.data.data)) {
+            // Format: { success: true, data: [...] }
+            mutate({ courses: response.data.data }, false);
           }
         }
       } catch (error) {

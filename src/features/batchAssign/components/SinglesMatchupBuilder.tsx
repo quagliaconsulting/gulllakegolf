@@ -108,7 +108,7 @@ const SinglesMatchupBuilder: React.FC<SinglesMatchupBuilderProps> = ({
                   className="flex items-center bg-gray-50 p-3 rounded-md border border-gray-200"
                 >
                   <div className="flex-1">
-                    <p className="text-blue-600 font-medium">
+                    <p className="text-green-600 font-medium">
                       {homePlayer.name}
                       <span className="text-gray-500 font-normal text-sm ml-1">
                         (HCP: {homePlayer.handicapIndex?.toFixed(1)})
@@ -154,7 +154,7 @@ const SinglesMatchupBuilder: React.FC<SinglesMatchupBuilderProps> = ({
               </label>
               <select
                 id="home-player"
-                className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
+                className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-green-500 focus:border-green-500 sm:text-sm rounded-md"
                 defaultValue=""
               >
                 <option value="" disabled>Select player</option>
@@ -205,7 +205,7 @@ const SinglesMatchupBuilder: React.FC<SinglesMatchupBuilderProps> = ({
                   }
                 }
               }}
-              className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+              className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
             >
               Add Matchup
             </button>

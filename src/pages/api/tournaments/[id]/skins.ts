@@ -1,79 +1,73 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { PrismaClient } from '@prisma/client';
-import { verifyToken } from '@/utils/auth';
-
-const prisma = new PrismaClient();
+import { prisma } from '@/lib/prisma';
+import { 
+  sendSuccess, 
+  sendError, 
+  sendNotFound, 
+  sendValidationError, 
+  sendMethodNotAllowed 
+} from '@/services/api/apiResponse';
 
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse
 ) {
-  const { id } = req.query;
+  const { id: tournamentId } = req.query;
+  const matchId = req.query.matchId as string | undefined;
   
-  if (!id || typeof id !== 'string') {
-    return res.status(400).json({ error: 'Invalid tournament ID' });
+  if (!tournamentId || typeof tournamentId !== 'string') {
+    return sendValidationError(res, 'Invalid tournament ID');
   }
-
-  // Verify JWT token (middleware should have already checked for token existence)
-  const authHeader = req.headers.authorization;
-  const token = authHeader?.startsWith('Bearer ') 
-    ? authHeader.substring(7) 
-    : req.cookies?.token;
-
-  if (!token) {
-    return res.status(401).json({ error: 'Authentication required' });
-  }
-
+  
   try {
-    // Verify token with better error handling
-    if (!verifyToken(token, res)) {
-      return; // Response already sent by verifyToken
-    }
     
-    // GET - Fetch Skins results for this tournament
+    // GET - fetch skins results
     if (req.method === 'GET') {
-      // Cast prisma to any for new models
-      const prismaAny = prisma as any;
-      const skinsResults = await prismaAny.skinsResult.findMany({
-        where: { tournamentId: id },
+      const query: any = {
+        where: { tournamentId },
         include: {
           player: true
         },
         orderBy: {
           holeNumber: 'asc'
         }
-      });
+      };
       
-      res.status(200).json(skinsResults);
-    } 
-    // POST - Add new Skin result
-    else if (req.method === 'POST') {
-      const { playerId, matchId, holeNumber, score, prize } = req.body;
-      
-      if (!playerId || !holeNumber || !score) {
-        return res.status(400).json({ error: 'Player ID, hole number, and score are required' });
+      // Filter by matchId if provided
+      if (matchId) {
+        query.where.matchId = matchId;
       }
       
-      // Cast prisma to any for new models
-      const prismaAny = prisma as any;
+      const skinsResults = await prisma.skinsResult.findMany(query);
       
-      // Check if there is already a Skin for this hole
-      const existingSkin = await prismaAny.skinsResult.findFirst({
+      return sendSuccess(res, { skinsResults }, 200);
+    } 
+    // POST - create/update skin results
+    else if (req.method === 'POST') {
+      const { playerId, holeNumber, score, matchId } = req.body;
+      
+      if (!playerId || !holeNumber || !score) {
+        return sendValidationError(res, 'Missing required fields');
+      }
+      
+      // Check if this hole already has a skin result
+      const existingSkin = await prisma.skinsResult.findFirst({
         where: {
-          tournamentId: id,
+          tournamentId,
           holeNumber: Number(holeNumber)
         }
       });
       
+      let result;
+      
       if (existingSkin) {
-        // Update existing result
-        const updatedSkin = await prismaAny.skinsResult.update({
+        // Update existing skin
+        result = await prisma.skinsResult.update({
           where: { id: existingSkin.id },
           data: {
             playerId,
-            matchId: matchId || null,
             score: Number(score),
-            prize: prize || null
+            matchId: matchId || null
           },
           include: {
             player: true
@@ -98,32 +92,27 @@ export default async function handler(
             const hole = match.course.holes.find(h => h.number === Number(holeNumber));
             
             if (hole) {
-              // Update the hole result to mark it as a skin - use any for custom field
               await prisma.holeResult.updateMany({
                 where: {
                   matchId,
                   holeId: hole.id
                 },
                 data: {
-                  // Cast to any to handle custom field
                   isSkin: true
-                } as any
+                }
               });
             }
           }
         }
-        
-        res.status(200).json(updatedSkin);
       } else {
-        // Create new result
-        const newSkin = await prismaAny.skinsResult.create({
+        // Create new skin
+        result = await prisma.skinsResult.create({
           data: {
-            tournamentId: id,
+            tournamentId,
             playerId,
-            matchId: matchId || null,
             holeNumber: Number(holeNumber),
             score: Number(score),
-            prize: prize || null,
+            matchId: matchId || null,
             paid: false
           },
           include: {
@@ -149,44 +138,44 @@ export default async function handler(
             const hole = match.course.holes.find(h => h.number === Number(holeNumber));
             
             if (hole) {
-              // Update the hole result to mark it as a skin
               await prisma.holeResult.updateMany({
                 where: {
                   matchId,
                   holeId: hole.id
                 },
                 data: {
-                  // Cast to any to handle custom field
                   isSkin: true
-                } as any
+                }
               });
             }
           }
         }
-        
-        res.status(201).json(newSkin);
       }
+      
+      return sendSuccess(res, { skin: result }, 200);
     }
-    // DELETE - Remove Skin result
+    // DELETE - remove a skin result
     else if (req.method === 'DELETE') {
       const { skinId } = req.body;
       
       if (!skinId) {
-        return res.status(400).json({ error: 'Skin ID is required' });
+        return sendValidationError(res, 'Missing skin ID');
       }
       
-      // Cast to any for new models
-      const prismaAny = prisma as any;
-      
-      // Get the skin to find match and hole info before deleting
-      const skin = await prismaAny.skinsResult.findUnique({
+      // Check if skin exists
+      const existingSkin = await prisma.skinsResult.findUnique({
         where: { id: skinId }
       });
       
-      if (skin?.matchId) {
+      if (!existingSkin) {
+        return sendNotFound(res, 'Skin result not found');
+      }
+      
+      // Update the holeResult in the match to unmark it as a skin
+      if (existingSkin.matchId) {
         // Find the hole ID for this hole number to update the hole result
         const match = await prisma.match.findUnique({
-          where: { id: skin.matchId },
+          where: { id: existingSkin.matchId },
           include: {
             course: {
               include: {
@@ -197,37 +186,36 @@ export default async function handler(
         });
         
         if (match) {
-          const hole = match.course.holes.find(h => h.number === skin.holeNumber);
+          const hole = match.course.holes.find(h => h.number === existingSkin.holeNumber);
           
           if (hole) {
             // Update the hole result to unmark it as a skin
             await prisma.holeResult.updateMany({
               where: {
-                matchId: skin.matchId,
+                matchId: existingSkin.matchId,
                 holeId: hole.id
               },
               data: {
-                // Cast to any to handle custom field
                 isSkin: false
-              } as any
+              }
             });
           }
         }
       }
       
-      // Now delete the skin
-      await prismaAny.skinsResult.delete({
+      // Delete the skin
+      await prisma.skinsResult.delete({
         where: { id: skinId }
       });
       
-      res.status(200).json({ message: 'Skin result deleted successfully' });
-    } 
+      return sendSuccess(res, { message: 'Skin result deleted successfully' }, 200);
+    }
     else {
-      res.setHeader('Allow', ['GET', 'POST', 'DELETE']);
-      res.status(405).end(`Method ${req.method} Not Allowed`);
+      return sendMethodNotAllowed(res, ['GET', 'POST', 'DELETE']);
     }
   } catch (error) {
-    console.error('Error handling Skins request:', error);
-    res.status(500).json({ error: 'An error occurred while processing your request' });
+    console.error('Error handling skin results:', error);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    return sendError(res, message, 500);
   }
 }

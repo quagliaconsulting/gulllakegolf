@@ -5,6 +5,8 @@ import { useScorecardState } from '../hooks/useScorecardState';
 import ScorecardHeader from './ScorecardHeader';
 import PasswordModal from './PasswordModal';
 import ScoreTable from './ScoreTable';
+import CtpModal from './CtpModal';
+import SkinsModal from './SkinsModal';
 import { AdjustmentsHorizontalIcon } from '@heroicons/react/24/outline';
 
 export const ScorecardPage: React.FC = () => {
@@ -21,7 +23,25 @@ export const ScorecardPage: React.FC = () => {
     lockStatus,
     showPasswordModal,
     passwordInput,
+    ctpWinners,
+    potentialSkins,
+    skinsWinners,
+    tournamentData,
+    // CTP Modal
+    showCtpModal,
+    setShowCtpModal,
+    ctpModalData,
+    openCtpModal,
+    // Skins Modal
+    showSkinsModal,
+    setShowSkinsModal,
+    skinsModalData,
+    openSkinsModal,
+    // Handlers
     handleScoreChange,
+    handleCtpWinnerChange,
+    handleSaveCtpWithDistance,
+    handleSaveSkin,
     saveScores,
     toggleLock,
     setShowPasswordModal,
@@ -101,7 +121,7 @@ export const ScorecardPage: React.FC = () => {
             <h3 className="text-lg font-semibold">Players</h3>
             <button
               onClick={goToPlayerAssignments}
-              className="text-blue-600 hover:text-blue-800 text-sm inline-flex items-center print:hidden"
+              className="text-green-600 hover:text-green-800 text-sm inline-flex items-center print:hidden"
             >
               <AdjustmentsHorizontalIcon className="h-4 w-4 mr-1" />
               Edit Players
@@ -110,7 +130,7 @@ export const ScorecardPage: React.FC = () => {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <h4 className="font-medium text-blue-600 mb-1">{match.homeTeam}</h4>
+              <h4 className="font-medium text-green-600 mb-1">{match.homeTeam}</h4>
               <ul className="list-disc list-inside text-sm">
                 {match.homePlayers && match.homePlayers.length > 0 ? (
                   match.homePlayers.map((player: any) => (
@@ -178,6 +198,12 @@ export const ScorecardPage: React.FC = () => {
                 onScoreChange={handleScoreChange}
                 lockStatus={lockStatus}
                 isFrontNine={true}
+                onCtpWinnerChange={handleCtpWinnerChange}
+                ctpWinners={ctpWinners}
+                potentialSkins={potentialSkins}
+                skinsWinners={skinsWinners}
+                openCtpModal={openCtpModal}
+                openSkinsModal={openSkinsModal}
               />
             </div>
           )}
@@ -193,6 +219,12 @@ export const ScorecardPage: React.FC = () => {
                 onScoreChange={handleScoreChange}
                 lockStatus={lockStatus}
                 isFrontNine={false}
+                onCtpWinnerChange={handleCtpWinnerChange}
+                ctpWinners={ctpWinners}
+                potentialSkins={potentialSkins}
+                skinsWinners={skinsWinners}
+                openCtpModal={openCtpModal}
+                openSkinsModal={openSkinsModal}
               />
             </div>
           )}
@@ -204,7 +236,7 @@ export const ScorecardPage: React.FC = () => {
             <h3 className="text-lg font-semibold mb-3">Match Points</h3>
             <div className="flex justify-center space-x-12 text-center">
               <div>
-                <div className="text-blue-600 font-medium mb-1">{match.homeTeam}</div>
+                <div className="text-green-600 font-medium mb-1">{match.homeTeam}</div>
                 <div className="text-3xl font-bold">{match.points.homeTeamPoints}</div>
               </div>
               <div>
@@ -223,7 +255,7 @@ export const ScorecardPage: React.FC = () => {
               {match.foursomeMatches.map((m: any) => (
                 <div key={m.id} className="border-b pb-2 last:border-0">
                   <div className="flex justify-between">
-                    <div className="text-blue-600">
+                    <div className="text-green-600">
                       {m.homePlayers.map((p: any) => p.name).join(' / ')}
                     </div>
                     <div className="text-gray-600">vs</div>
@@ -251,6 +283,35 @@ export const ScorecardPage: React.FC = () => {
         onPasswordChange={setPasswordInput}
         onSubmit={verifyPasswordAndLock}
       />
+      
+      {/* CTP Modal */}
+      {match && (
+        <CtpModal
+          isOpen={showCtpModal}
+          onClose={() => setShowCtpModal(false)}
+          holeId={ctpModalData.holeId}
+          holeName={ctpModalData.holeName}
+          players={[...match.homePlayers.map((p: any) => ({ ...p, isHomeTeam: true })), 
+                    ...match.awayPlayers.map((p: any) => ({ ...p, isHomeTeam: false }))]}
+          onSave={handleSaveCtpWithDistance}
+          currentWinnerId={ctpModalData.currentWinnerId}
+        />
+      )}
+      
+      {/* Skins Modal */}
+      {match && (
+        <SkinsModal
+          isOpen={showSkinsModal}
+          onClose={() => setShowSkinsModal(false)}
+          holeNumber={skinsModalData.holeNumber}
+          holeName={skinsModalData.holeName}
+          players={[...match.homePlayers.map((p: any) => ({ ...p, isHomeTeam: true })), 
+                    ...match.awayPlayers.map((p: any) => ({ ...p, isHomeTeam: false }))]}
+          onSave={handleSaveSkin}
+          currentWinnerId={skinsModalData.currentWinnerId}
+          currentScore={skinsModalData.currentScore}
+        />
+      )}
     </>
   );
 };

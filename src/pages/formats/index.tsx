@@ -34,12 +34,27 @@ const FormatsPage: React.FC = () => {
           }
         };
         
-        const { data } = await axios.get('/api/tournaments', authHeader);
-        setTournaments(data);
+        const response = await axios.get('/api/tournaments', authHeader);
+        let tournamentsData;
+        
+        // Handle different API response formats
+        if (response.data.success && response.data.data) {
+          // New format with success/data wrapper
+          tournamentsData = Array.isArray(response.data.data) ? response.data.data : [response.data.data];
+        } else if (Array.isArray(response.data)) {
+          // Old format (direct array)
+          tournamentsData = response.data;
+        } else {
+          console.error('Unexpected tournaments response format:', response.data);
+          tournamentsData = [];
+        }
+        
+        console.log('Tournaments data:', tournamentsData);
+        setTournaments(tournamentsData);
         
         // If tournaments exist, select the first one by default
-        if (data.length > 0) {
-          setSelectedTournament(data[0].id);
+        if (tournamentsData.length > 0) {
+          setSelectedTournament(tournamentsData[0].id);
         }
       } catch (err) {
         setError('Failed to load tournaments');
@@ -63,8 +78,23 @@ const FormatsPage: React.FC = () => {
           }
         };
         
-        const { data } = await axios.get(`/api/formats?tournamentId=${selectedTournament}`, authHeader);
-        setFormats(data);
+        const response = await axios.get(`/api/formats?tournamentId=${selectedTournament}`, authHeader);
+        let formatsData;
+        
+        // Handle different API response formats
+        if (response.data.success && response.data.data) {
+          // New format with success/data wrapper
+          formatsData = Array.isArray(response.data.data) ? response.data.data : [response.data.data];
+        } else if (Array.isArray(response.data)) {
+          // Old format (direct array)
+          formatsData = response.data;
+        } else {
+          console.error('Unexpected formats response format:', response.data);
+          formatsData = [];
+        }
+        
+        console.log('Formats data:', formatsData);
+        setFormats(formatsData);
         setError(null);
       } catch (err) {
         setError('Failed to load formats');

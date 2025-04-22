@@ -283,7 +283,7 @@ export default function ScoringPage() {
                   {currentMatch.format.formatName} - {currentMatch.course.name}
                 </p>
                 {currentMatch.format?.isFourManTeam ? (
-                  <p className="mt-1 text-sm font-medium text-blue-600">
+                  <p className="mt-1 text-sm font-medium text-green-600">
                     4-Man Team Event (No handicaps applied)
                   </p>
                 ) : (
@@ -351,7 +351,7 @@ export default function ScoringPage() {
                         <th scope="col" className="px-3 py-3.5 text-center text-sm font-semibold text-gray-900">
                           <div>Match Play Strokes</div>
                           <div className="text-xs font-normal">
-                            <span className="text-blue-600 mr-2">{currentMatch.homeTeam.name}</span>/
+                            <span className="text-green-600 mr-2">{currentMatch.homeTeam.name}</span>/
                             <span className="text-red-600 ml-2">{currentMatch.awayTeam.name}</span>
                           </div>
                         </th>
@@ -473,9 +473,9 @@ export default function ScoringPage() {
                           <>
                             <td className="whitespace-nowrap px-3 py-4 text-sm text-center">
                               <span className="inline-flex items-center justify-center">
-                                <span className={`mr-2 ${homeStrokesOnHole > 0 ? 'text-blue-600 font-medium' : 'text-gray-400'}`}>
+                                <span className={`mr-2 ${homeStrokesOnHole > 0 ? 'text-green-600 font-medium' : 'text-gray-400'}`}>
                                   {homeStrokesOnHole > 0 ? 
-                                    <span className="rounded-full bg-blue-100 px-2 py-1 text-xs font-semibold">
+                                    <span className="rounded-full bg-green-100 px-2 py-1 text-xs font-semibold">
                                       {homeStrokesOnHole > 1 ? homeStrokesOnHole : '✓'}
                                     </span> : '-'}
                                 </span>

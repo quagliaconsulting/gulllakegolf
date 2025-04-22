@@ -18,36 +18,8 @@ export default function Teams() {
     '/api/teams',
     fetcher,
     {
-      // Just use dummy data for demonstration since we haven't built this endpoint yet
       fallbackData: {
-        teams: [
-          { 
-            id: '1', 
-            name: 'Spartan Dawgs', 
-            players: [
-              { id: '1', name: 'James Miller', handicapIndex: 16.0 },
-              { id: '2', name: 'Tom Wilson', handicapIndex: 12.4 },
-              { id: '3', name: 'Steve Adams', handicapIndex: 8.0 },
-              { id: '4', name: 'Brian Taylor', handicapIndex: 14.2 },
-              { id: '5', name: 'Kevin Brown', handicapIndex: 10.5 },
-              { id: '6', name: 'Mark Johnson', handicapIndex: 7.8 },
-            ],
-            tournament: { id: '1', name: 'Spring Classic 2025' }
-          },
-          { 
-            id: '2', 
-            name: 'Invited Guests', 
-            players: [
-              { id: '7', name: 'Dan Johnson', handicapIndex: 7.8 },
-              { id: '8', name: 'Mike Smith', handicapIndex: 10.2 },
-              { id: '9', name: 'Chris Davis', handicapIndex: 12.8 },
-              { id: '10', name: 'Bob Martin', handicapIndex: 11.2 },
-              { id: '11', name: 'Alex Robinson', handicapIndex: 9.3 },
-              { id: '12', name: 'Dave Wilson', handicapIndex: 15.6 },
-            ],
-            tournament: { id: '1', name: 'Spring Classic 2025' }
-          },
-        ]
+        teams: []
       }
     }
   );

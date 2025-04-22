@@ -80,8 +80,25 @@ export class AuthService {
       return authHeader.substring(7);
     }
     
-    if (req.cookies?.token) {
+    // Check for token in various cookie formats
+    // For Next.js 12+ cookies (object with value property)
+    if (req.cookies?.token && typeof req.cookies.token === 'object' && 'value' in req.cookies.token) {
+      return (req.cookies.token as {value: string}).value;
+    }
+    
+    // For string cookies
+    if (req.cookies?.token && typeof req.cookies.token === 'string') {
       return req.cookies.token;
+    }
+    
+    // For Next.js 12+ auth_token (object with value property)
+    if (req.cookies?.auth_token && typeof req.cookies.auth_token === 'object' && 'value' in req.cookies.auth_token) {
+      return (req.cookies.auth_token as {value: string}).value;
+    }
+    
+    // For string auth_token
+    if (req.cookies?.auth_token && typeof req.cookies.auth_token === 'string') {
+      return req.cookies.auth_token;
     }
     
     return null;
@@ -117,18 +134,9 @@ export class AuthService {
    */
   static async getSessionUser(req: NextApiRequest): Promise<SessionUser | null> {
     try {
-      // First try NextAuth session
-      const nextAuthToken = await getToken({ req });
-      if (nextAuthToken) {
-        return {
-          id: nextAuthToken.id as string || nextAuthToken.sub as string,
-          name: nextAuthToken.name as string,
-          email: nextAuthToken.email as string,
-          role: nextAuthToken.role as UserRole || UserRole.PLAYER
-        };
-      }
+      // Skip NextAuth token for now - it requires specific setup
+      // Just use our own JWT token system
       
-      // Then try manual JWT token
       const token = this.getTokenFromRequest(req);
       if (!token) {
         return null;

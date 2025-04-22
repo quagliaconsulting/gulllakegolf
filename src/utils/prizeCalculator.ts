@@ -18,6 +18,7 @@ export function calculateCTPPrize(
   
   // Calculate total pot (participants * CTP entry fee) and divide by number of par 3 holes
   const totalPot = ctpEntryFee * participantCount;
+  // Round to 2 decimal places for precise dollar amount
   return Math.round((totalPot / par3Count) * 100) / 100;
 }
 
@@ -38,10 +39,11 @@ export function calculateSkinsPrize(
   // Calculate total pot (participants * skins entry fee)
   const totalPot = skinsEntryFee * participantCount;
   
-  // If no skins recorded yet, just return the pot amount
-  if (!skinCount) return totalPot;
+  // If no skins recorded yet, just return the pot amount (rounded to 2 decimal places)
+  if (!skinCount) return Math.round(totalPot * 100) / 100;
   
   // Otherwise divide by number of skins
+  // Round to 2 decimal places for precise dollar amount
   return Math.round((totalPot / skinCount) * 100) / 100;
 }
 
@@ -68,6 +70,7 @@ export function calculateTeamPayouts(
   Object.entries(payoutStructure)
     .filter(([place]) => Number(place) <= teamCount)
     .forEach(([place, percentage]) => {
+      // Round to 2 decimal places for precise dollar amount
       payouts[place] = Math.round((totalPrize * (percentage / 100)) * 100) / 100;
     });
   

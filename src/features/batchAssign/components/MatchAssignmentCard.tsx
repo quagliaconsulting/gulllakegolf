@@ -30,7 +30,7 @@ const MatchAssignmentCard: React.FC<MatchAssignmentCardProps> = ({
             <h3 className="text-lg leading-6 font-medium text-gray-900 mr-2">
               {match.format}
             </h3>
-            <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">
+            <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
               {match.time}
             </span>
           </div>
@@ -38,16 +38,16 @@ const MatchAssignmentCard: React.FC<MatchAssignmentCardProps> = ({
             {match.course} • Hole {match.startingHole || 1}
           </p>
           <div className="mt-2 flex text-sm">
-            <div className="text-blue-600 font-medium mr-1">{match.homeTeam}</div>
+            <div className="text-green-600 font-medium mr-1">{match.homeTeam}</div>
             <div className="text-gray-500 mx-1">vs</div>
             <div className="text-red-600 font-medium ml-1">{match.awayTeam}</div>
           </div>
         </div>
         <div className="flex items-center space-x-4">
           <div className="flex space-x-1">
-            <div className="flex items-center bg-blue-50 px-2 py-1 rounded-md">
-              <UsersIcon className="h-4 w-4 text-blue-600 mr-1" />
-              <span className="text-blue-600 text-sm font-medium">{match.homePlayers.length}</span>
+            <div className="flex items-center bg-green-50 px-2 py-1 rounded-md">
+              <UsersIcon className="h-4 w-4 text-green-600 mr-1" />
+              <span className="text-green-600 text-sm font-medium">{match.homePlayers.length}</span>
             </div>
             <div className="flex items-center bg-red-50 px-2 py-1 rounded-md">
               <UsersIcon className="h-4 w-4 text-red-600 mr-1" />
@@ -67,7 +67,7 @@ const MatchAssignmentCard: React.FC<MatchAssignmentCardProps> = ({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* Home Team */}
             <div>
-              <h4 className="text-sm font-medium text-blue-700 mb-2">
+              <h4 className="text-sm font-medium text-green-700 mb-2">
                 {match.homeTeam} Players
               </h4>
               <PlayerSelectionList

@@ -13,7 +13,7 @@ interface PlayerSelectionListProps {
   selectedIds: string[];
   onChange: (selectedIds: string[]) => void;
   requiredPlayers: number;
-  teamColor?: 'blue' | 'red';
+  teamColor?: 'green' | 'red';
 }
 
 const PlayerSelectionList: React.FC<PlayerSelectionListProps> = ({
@@ -21,7 +21,7 @@ const PlayerSelectionList: React.FC<PlayerSelectionListProps> = ({
   selectedIds,
   onChange,
   requiredPlayers,
-  teamColor = 'blue',
+  teamColor = 'green',
 }) => {
   const handleTogglePlayer = (playerId: string) => {
     const isSelected = selectedIds.includes(playerId);
@@ -50,7 +50,7 @@ const PlayerSelectionList: React.FC<PlayerSelectionListProps> = ({
               <li 
                 key={player.id}
                 className={`px-4 py-3 flex justify-between items-center cursor-pointer hover:bg-gray-100 
-                  ${isSelected ? (teamColor === 'blue' ? 'bg-blue-50' : 'bg-red-50') : ''}`}
+                  ${isSelected ? (teamColor === 'green' ? 'bg-green-50' : 'bg-red-50') : ''}`}
                 onClick={() => handleTogglePlayer(player.id)}
               >
                 <div className="text-sm">
@@ -59,7 +59,7 @@ const PlayerSelectionList: React.FC<PlayerSelectionListProps> = ({
                 </div>
                 <div>
                   {isSelected ? (
-                    <CheckCircleIcon className={`h-5 w-5 ${teamColor === 'blue' ? 'text-blue-500' : 'text-red-500'}`} />
+                    <CheckCircleIcon className={`h-5 w-5 ${teamColor === 'green' ? 'text-green-500' : 'text-red-500'}`} />
                   ) : (
                     <PlusCircleIcon className="h-5 w-5 text-gray-400" />
                   )}

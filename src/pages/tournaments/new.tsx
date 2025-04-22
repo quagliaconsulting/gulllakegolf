@@ -76,10 +76,12 @@ export default function NewTournament() {
         { name: 'Invited Guests' },
       ],
       formatMultipliers: [
-        { formatName: 'Best Ball', multiplier: 1.0, points: 1.0, halfPoints: 0.5 },
+        { formatName: 'Singles', multiplier: 1.0, points: 1.0, halfPoints: 0.5 },
+        { formatName: 'Best Ball', multiplier: 0.9, points: 1.0, halfPoints: 0.5 },
         { formatName: 'Scramble', multiplier: 0.4, points: 1.0, halfPoints: 0.5 },
         { formatName: 'Alternate Shot', multiplier: 0.7, points: 1.0, halfPoints: 0.5 },
         { formatName: 'Chapman', multiplier: 0.6, points: 1.0, halfPoints: 0.5 },
+        { formatName: '4-Man Team', multiplier: 0.8, points: 1.0, halfPoints: 0.5, isFourManTeam: true },
       ],
     },
   });
@@ -108,10 +110,12 @@ export default function NewTournament() {
         [{ name: 'Spartan Dawgs' }, { name: 'Invited Guests' }],
       // Ensure we have format multipliers
       formatMultipliers: data.formatMultipliers || [
-        { formatName: 'Best Ball', multiplier: 1.0, points: 1.0, halfPoints: 0.5 },
+        { formatName: 'Singles', multiplier: 1.0, points: 1.0, halfPoints: 0.5 },
+        { formatName: 'Best Ball', multiplier: 0.9, points: 1.0, halfPoints: 0.5 },
         { formatName: 'Scramble', multiplier: 0.4, points: 1.0, halfPoints: 0.5 },
         { formatName: 'Alternate Shot', multiplier: 0.7, points: 1.0, halfPoints: 0.5 },
         { formatName: 'Chapman', multiplier: 0.6, points: 1.0, halfPoints: 0.5 },
+        { formatName: '4-Man Team', multiplier: 0.8, points: 1.0, halfPoints: 0.5, isFourManTeam: true },
       ]
     };
     

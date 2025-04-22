@@ -17,8 +17,10 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({ tournament, schedulesD
 
   // Calculate tournament stats
   const teamCount = tournament.teams?.length || 0;
-  const playerCount = tournament.teams?.reduce((count: number, team: any) => 
-    count + (team.players?.length || 0), 0) || 0;
+  // Use either the top-level player count or calculate from teams
+  const playerCount = tournament.players || 
+    tournament.teams?.reduce((count: number, team: any) => 
+      count + (team.players?.length || 0), 0) || 0;
   const matchCount = schedulesData?.schedules?.reduce((count: number, schedule: any) => 
     count + (schedule.matches?.length || 0), 0) || 0;
   const durationDays = calculateDurationDays(tournament.startDate, tournament.endDate);
@@ -104,7 +106,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({ tournament, schedulesD
                     <span
                       className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
                         tournament.status === 'upcoming'
-                          ? 'bg-blue-100 text-blue-800'
+                          ? 'bg-green-100 text-green-800'
                           : tournament.status === 'active'
                           ? 'bg-green-100 text-green-800'
                           : 'bg-gray-100 text-gray-800'

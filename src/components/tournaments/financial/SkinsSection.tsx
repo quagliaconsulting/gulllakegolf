@@ -31,7 +31,7 @@ export default function SkinsSection({
           <div className="bg-gray-50 p-4 rounded-md border border-gray-200">
             <div className="flex justify-between mb-2">
               <span className="text-gray-600">Skins Entry Fee:</span>
-              <span className="font-medium">${tournament.skinsPrizeAmount || 0}/player</span>
+              <span className="font-medium">${(tournament.skinsPrizeAmount || 0).toFixed(2)}/player</span>
             </div>
             <div className="flex justify-between mb-2">
               <span className="text-gray-600">Skins Participants:</span>
@@ -39,7 +39,7 @@ export default function SkinsSection({
             </div>
             <div className="flex justify-between mb-2">
               <span className="text-gray-600">Total Pot:</span>
-              <span className="font-medium">${(tournament.skinsPrizeAmount || 0) * (skinsParticipants || 0)}</span>
+              <span className="font-medium">${((tournament.skinsPrizeAmount || 0) * (skinsParticipants || 0)).toFixed(2)}</span>
             </div>
             <div className="flex justify-between mb-2">
               <span className="text-gray-600">Skins Recorded:</span>
@@ -48,7 +48,7 @@ export default function SkinsSection({
             <div className="flex justify-between mb-2">
               <span className="text-gray-600">Prize Per Skin:</span>
               <span className="font-medium">
-                {skinsResults?.length ? `$${skinsPrizePerHole}` : 'No skins recorded yet'}
+                {skinsResults?.length ? `$${skinsPrizePerHole.toFixed(2)}` : 'No skins recorded yet'}
               </span>
             </div>
           </div>
@@ -62,7 +62,7 @@ export default function SkinsSection({
                 {skinsResults.map((result: SkinsResult) => (
                   <div key={result.id} className="flex justify-between">
                     <span className="text-gray-600">
-                      Hole {result.holeNumber}:
+                      Hole {result.holeNumber}{result.match ? ` (${result.match.format?.formatName || 'Match'})` : ''}:
                     </span>
                     <span className="font-medium">
                       {result.player?.name} ({result.score})

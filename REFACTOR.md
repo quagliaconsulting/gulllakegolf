@@ -45,8 +45,10 @@ src/
 ├── pages/               # Next.js pages
 ├── services/            # Business logic and data access
 │   ├── api/             # API client functions
+│   ├── course/          # Course-related services
 │   ├── match/           # Match-related services
 │   ├── player/          # Player-related services
+│   ├── schedule/        # Schedule-related services
 │   └── tournament/      # Tournament-related services
 ├── styles/              # Global styles
 ├── types/               # TypeScript type definitions
@@ -62,7 +64,7 @@ src/
 
 ## Progress Report (DELETE THIS SECTION WHEN RESUMING)
 
-### Completed Work (April 21, 2025)
+### Completed Work (April 21-23, 2025)
 1. **Analysis & Setup**
    - Performed deep-dive analysis of the codebase
    - Identified major issues: oversized components, code duplication, architectural problems
@@ -128,8 +130,32 @@ src/
    - Prepared groundwork for API route refactoring
    - Improved database access patterns with proper error handling
 
+9. **Financial Management Component Refactoring (April 23, 2025)**
+   - Refactored MoneyTab component to features directory
+   - Created proper type definitions for financial management
+   - Extracted reusable components for CTP and Skins
+   - Improved data fetching patterns with SWR
+   - Enhanced error handling and loading states
+
+10. **Singles Match Pairing Refactoring (April 23, 2025)**
+    - Migrated SinglesFoursomeEditor to features directory
+    - Extended MatchService with createFoursome method
+    - Improved player matching and foursome group creation
+    - Replaced direct API calls with service layer methods
+    - Updated BatchAssignPage to use the new component
+    - Added proper type definitions for match pairings
+
+11. **Additional Service Implementation (April 24, 2025)**
+    - Implemented PlayerService for player management operations
+    - Implemented ScheduleService for schedule management
+    - Refactored player API endpoints to use PlayerService
+    - Refactored schedule API endpoints to use ScheduleService 
+    - Cleaned up redundant components that had been migrated to features
+    - Standardized API responses and error handling
+
 ### Next Steps
 - Continue refactoring other large pages (players.tsx, tournaments/new.tsx)
-- Refactor tournament API routes to use TournamentService
-- Implement PlayerService and ScheduleService
+- Refactor remaining tournament API routes to use TournamentService
 - Improve type safety and add API request/response types
+- Create unit tests for service layer
+- Implement frontend validation with proper error messaging

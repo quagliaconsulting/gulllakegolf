@@ -14,9 +14,7 @@ export class TournamentService {
   ) {
     const where: Prisma.TournamentWhereInput = {};
     
-    if (status) {
-      where.status = status;
-    }
+    // Status filtering logic will be handled in-memory since status is a derived property
     
     const tournaments = await prisma.tournament.findMany({
       where,
@@ -51,7 +49,13 @@ export class TournamentService {
           include: {
             players: true
           }
-        } : undefined
+        } : false,
+        schedules: {
+          include: {
+            matches: true
+          }
+        },
+        formatMultipliers: true
       }
     });
     
@@ -59,10 +63,28 @@ export class TournamentService {
       return null;
     }
     
+    // Calculate tournament status based on dates
+    const now = new Date();
+    const startDate = new Date(tournament.startDate);
+    const endDate = new Date(tournament.endDate);
+    
+    let status = 'upcoming';
+    if (now > endDate) {
+      status = 'completed';
+    } else if (now >= startDate && now <= endDate) {
+      status = 'active';
+    }
+    
+    // Add status to the tournament
+    const enrichedTournament = {
+      ...tournament,
+      status
+    };
+    
     // If payment status is requested, fetch and include it
-    if (includePaymentStatus && tournament.teams) {
+    if (includePaymentStatus && enrichedTournament.teams) {
       // Get all players from all teams
-      const allPlayers = tournament.teams.flatMap(team => team.players || []);
+      const allPlayers = enrichedTournament.teams.flatMap((team: any) => (team.players && Array.isArray(team.players)) ? team.players : []);
       const playerIds = allPlayers.map(player => player.id);
       
       if (playerIds.length > 0) {
@@ -80,25 +102,45 @@ export class TournamentService {
           if (!paymentMap[payment.playerId]) {
             paymentMap[payment.playerId] = {};
           }
-          paymentMap[payment.playerId][payment.type] = payment.paid;
+          paymentMap[payment.playerId][payment.type] = payment.status === 'PAID';
         });
         
         // Add payment statuses to each player
-        tournament.teams = tournament.teams.map(team => ({
+        enrichedTournament.teams = enrichedTournament.teams.map((team: any) => ({
           ...team,
-          players: team.players.map(player => ({
+          players: Array.isArray(team.players) ? team.players.map((player: any) => ({
             ...player,
             paymentStatuses: paymentMap[player.id] || {
               BUY_IN: false,
               CTP_ENTRY: false,
               SKINS_ENTRY: false
             }
-          }))
+          })) : []
         }));
       }
     }
     
-    return tournament;
+    // Add match count for consistency with the old API
+    const matchCount = enrichedTournament.schedules.reduce((total, schedule) => {
+      return total + schedule.matches.length;
+    }, 0);
+    
+    // Add player count for consistency with the old API
+    // Query to get the actual count rather than relying on the teams players
+    const playerCount = await prisma.player.count({
+      where: {
+        teamId: {
+          in: enrichedTournament.teams?.map((t: any) => t.id) || []
+        }
+      }
+    });
+    
+    // Final enhanced tournament object
+    return {
+      ...enrichedTournament,
+      matches: matchCount,
+      players: playerCount
+    };
   }
   
   /**
@@ -125,117 +167,190 @@ export class TournamentService {
    */
   async deleteTournament(id: string) {
     // First, delete all related data in the correct order
-    // 1. Delete hole results
-    await prisma.holeResult.deleteMany({
-      where: {
-        match: {
-          schedule: {
+    try {
+      // 1. Delete CTP results
+      await prisma.cTPResult.deleteMany({
+        where: { tournamentId: id }
+      });
+      
+      // 2. Delete skins results
+      await prisma.skinsResult.deleteMany({
+        where: { tournamentId: id }
+      });
+      
+      // 3. Delete hole results
+      await prisma.holeResult.deleteMany({
+        where: {
+          match: {
             tournamentId: id
           }
         }
-      }
-    });
-    
-    // 2. Delete player pairings
-    await prisma.playerPairing.deleteMany({
-      where: {
-        match: {
-          schedule: {
+      });
+      
+      // 4. Delete player pairings
+      await prisma.playerPairing.deleteMany({
+        where: {
+          match: {
             tournamentId: id
           }
         }
-      }
-    });
-    
-    // 3. Delete match points
-    await prisma.matchPoints.deleteMany({
-      where: {
-        match: {
-          schedule: {
+      });
+      
+      // 5. Delete match points
+      await prisma.matchPoints.deleteMany({
+        where: {
+          match: {
             tournamentId: id
           }
         }
-      }
-    });
-    
-    // 4. Delete matches
-    await prisma.match.deleteMany({
-      where: {
-        schedule: {
-          tournamentId: id
+      });
+      
+      // 6. Delete matches directly by tournamentId (not through schedule)
+      await prisma.match.deleteMany({
+        where: { tournamentId: id }
+      });
+      
+      // 7. Delete schedules
+      await prisma.schedule.deleteMany({
+        where: { tournamentId: id }
+      });
+      
+      // 8. Delete player payments
+      await prisma.playerPayment.deleteMany({
+        where: { tournamentId: id }
+      });
+      
+      // 9. Delete formatMultipliers
+      await prisma.formatMultiplier.deleteMany({
+        where: { tournamentId: id }
+      });
+      
+      // 10. Delete holes from course
+      await prisma.hole.deleteMany({
+        where: {
+          course: {
+            tournamentId: id
+          }
         }
-      }
-    });
-    
-    // 5. Delete schedules
-    await prisma.schedule.deleteMany({
-      where: {
-        tournamentId: id
-      }
-    });
-    
-    // 6. Delete player payments
-    await prisma.playerPayment.deleteMany({
-      where: {
-        tournamentId: id
-      }
-    });
-    
-    // 7. Delete tournament
-    return await prisma.tournament.delete({
-      where: {
-        id
-      }
-    });
+      });
+      
+      // 11. Delete courses
+      await prisma.course.deleteMany({
+        where: { tournamentId: id }
+      });
+      
+      // 12. Delete gallery photos
+      await prisma.galleryPhoto.deleteMany({
+        where: { tournamentId: id }
+      });
+      
+      // 13. Delete reports
+      await prisma.report.deleteMany({
+        where: { tournamentId: id }
+      });
+      
+      // Remove team affiliations for players, but don't delete the players
+      await prisma.player.updateMany({
+        where: {
+          team: {
+            tournamentId: id
+          }
+        },
+        data: {
+          teamId: null
+        }
+      });
+      
+      // 15. Delete teams
+      await prisma.team.deleteMany({
+        where: { tournamentId: id }
+      });
+      
+      // 16. Delete accommodations
+      await prisma.accommodation.deleteMany({
+        where: { tournamentId: id }
+      });
+      
+      // 17. Finally, delete the tournament
+      return await prisma.tournament.delete({
+        where: { id }
+      });
+    } catch (error) {
+      console.error('Error in deleteTournament:', error);
+      throw error;
+    }
   }
   
   /**
    * Get tournament schedule
    */
   async getTournamentSchedule(tournamentId: string) {
-    const schedules = await prisma.schedule.findMany({
-      where: {
-        tournamentId
-      },
-      orderBy: {
-        date: 'asc'
-      },
-      include: {
-        matches: {
-          include: {
-            format: true,
-            course: true,
-            homeTeam: true,
-            awayTeam: true
-          },
-          orderBy: {
-            teeTime: 'asc'
+    try {
+      // First check if tournament exists
+      const tournamentExists = await prisma.tournament.findUnique({
+        where: { id: tournamentId },
+        select: { id: true }
+      });
+      
+      if (!tournamentExists) {
+        console.log(`Tournament not found for schedule lookup: ${tournamentId}`);
+        return { schedules: [] };
+      }
+      
+      const schedules = await prisma.schedule.findMany({
+        where: {
+          tournamentId
+        },
+        orderBy: {
+          date: 'asc'
+        },
+        include: {
+          matches: {
+            include: {
+              format: true,
+              course: true,
+              homeTeam: true,
+              awayTeam: true
+            },
+            orderBy: {
+              teeTime: 'asc'
+            }
           }
         }
+      });
+      
+      // If no schedules found, return empty array
+      if (schedules.length === 0) {
+        console.log(`No schedules found for tournament: ${tournamentId}`);
+        return { schedules: [] };
       }
-    });
-    
-    // Format the matches for easier consumption
-    return {
-      schedules: schedules.map(schedule => ({
-        ...schedule,
-        matches: schedule.matches.map(match => ({
-          id: match.id,
-          homeTeam: match.homeTeam?.name || 'Team 1',
-          homeTeamId: match.homeTeamId,
-          awayTeam: match.awayTeam?.name || 'Team 2',
-          awayTeamId: match.awayTeamId,
-          format: match.format.formatName,
-          formatId: match.formatId,
-          course: match.course.name,
-          courseId: match.courseId,
-          time: match.teeTime,
-          teeTime: match.teeTime,
-          startingHole: match.startingHole,
-          scheduleId: schedule.id
+      
+      // Format the matches for easier consumption
+      return {
+        schedules: schedules.map(schedule => ({
+          ...schedule,
+          matches: schedule.matches.map(match => ({
+            id: match.id,
+            homeTeam: match.homeTeam?.name || 'Team 1',
+            homeTeamId: match.homeTeamId,
+            awayTeam: match.awayTeam?.name || 'Team 2',
+            awayTeamId: match.awayTeamId,
+            format: match.format.formatName,
+            formatId: match.formatId,
+            course: match.course.name,
+            courseId: match.courseId,
+            time: match.teeTime,
+            teeTime: match.teeTime,
+            startingHole: match.startingHole,
+            scheduleId: schedule.id
+          }))
         }))
-      }))
-    };
+      };
+    } catch (error) {
+      console.error(`Error getting tournament schedule for ${tournamentId}:`, error);
+      // Return empty schedules on error
+      return { schedules: [] };
+    }
   }
   
   /**
@@ -294,10 +409,12 @@ export class TournamentService {
     }> = {};
     
     // Set up team standings for all teams
-    tournament.teams.forEach(team => {
-      const isHomeTeam = team.metadata && 
-        typeof team.metadata === 'object' && 
-        team.metadata.isHomeTeam === true;
+    tournament.teams.forEach((team: any) => {
+      const metadata = team.metadata;
+      const isHomeTeam = metadata && 
+        (typeof metadata === 'object') && 
+        ('isHomeTeam' in metadata) && 
+        Boolean(metadata.isHomeTeam);
         
       teamStandings[team.id] = {
         teamId: team.id,
@@ -307,24 +424,26 @@ export class TournamentService {
         matchesWon: 0,
         matchesTied: 0,
         matchesLost: 0,
-        isHomeTeam
+        isHomeTeam: Boolean(isHomeTeam)
       };
       
       // Set up player standings for all players
-      team.players.forEach(player => {
-        playerStandings[player.id] = {
-          playerId: player.id,
-          playerName: player.name,
-          teamName: team.name,
-          handicapIndex: player.handicapIndex,
-          matchesPlayed: 0,
-          pointsEarned: 0,
-          holesWon: 0,
-          holesTied: 0,
-          holesLost: 0,
-          isHomeTeam
-        };
-      });
+      if (team.players && Array.isArray(team.players)) {
+        team.players.forEach((player: any) => {
+          playerStandings[player.id] = {
+            playerId: player.id,
+            playerName: player.name,
+            teamName: team.name,
+            handicapIndex: player.handicapIndex,
+            matchesPlayed: 0,
+            pointsEarned: 0,
+            holesWon: 0,
+            holesTied: 0,
+            holesLost: 0,
+            isHomeTeam: Boolean(isHomeTeam)
+          };
+        });
+      }
     });
     
     // Process match results
@@ -364,28 +483,55 @@ export class TournamentService {
         if (!playerStandings[pairing.playerId]) return;
         
         const player = playerStandings[pairing.playerId];
+        if (!player) return;
         
         // Update matches played
         player.matchesPlayed++;
         
-        // For singles format, calculate player-specific points
-        if (match.format === 'SINGLES') {
-          // Filter hole results for this player's pairings
-          const playerHoleResults = match.holeResults.filter(result => {
-            // TODO: Implement player-specific hole results logic
-            return true;
-          });
+        // Calculate player-specific hole statistics for ALL formats
+        const playerTeamId = pairing.isHomeTeam ? homeTeamId : awayTeamId;
+        const opponentTeamId = pairing.isHomeTeam ? awayTeamId : homeTeamId;
+        
+        // Count holes won/lost/tied for this player
+        const holesWon = match.holeResults.filter(r => 
+          r.winnerTeamId === playerTeamId
+        ).length;
+        
+        const holesLost = match.holeResults.filter(r => 
+          r.winnerTeamId === opponentTeamId
+        ).length;
+        
+        const holesTied = match.holeResults.filter(r => 
+          r.winnerTeamId === null && 
+          r.homeTeamNetScore !== null && 
+          r.awayTeamNetScore !== null
+        ).length;
+        
+        // Update player hole statistics for ALL formats
+        player.holesWon += holesWon;
+        player.holesLost += holesLost;
+        player.holesTied += holesTied;
+        
+        // For singles format, calculate player-specific points separately
+        if (match.playerToPlayerMatch) {
+          // For singles matches, calculate points based on match format
+          // This is important for individual player statistics
+          let pointsPerWinValue = 1.0; 
+          let pointsPerTieValue = 0.5;
           
-          // Update player statistics (simplified for now)
-          if (playerHoleResults.length > 0) {
-            player.holesWon += playerHoleResults.filter(r => r.winnerTeamId === (pairing.isHomeTeam ? homeTeamId : awayTeamId)).length;
-            player.holesLost += playerHoleResults.filter(r => r.winnerTeamId === (pairing.isHomeTeam ? awayTeamId : homeTeamId)).length;
-            player.holesTied += playerHoleResults.filter(r => r.winnerTeamId === null && r.homeTeamNetScore !== null).length;
-          }
+          // Calculate player points directly from holes won/tied
+          const playerPointsFromWins = holesWon * pointsPerWinValue;
+          const playerPointsFromTies = holesTied * pointsPerTieValue;
+          const totalPlayerPoints = playerPointsFromWins + playerPointsFromTies;
+          
+          // Update player points
+          player.pointsEarned += totalPlayerPoints;
         }
         
-        // Add team points to player
-        player.pointsEarned += pairing.isHomeTeam ? match.points.homeTeamPoints : match.points.awayTeamPoints;
+        // Add team points to player for team formats
+        if (!match.playerToPlayerMatch && match.points) {
+          player.pointsEarned += pairing.isHomeTeam ? match.points.homeTeamPoints : match.points.awayTeamPoints;
+        }
       });
     });
     

@@ -33,13 +33,43 @@ export default function EditCourse() {
     if (id) {
       const fetchCourseData = async () => {
         try {
+          console.log(`Fetching course data for ID: ${id}`);
           const response = await axios.get(`/api/courses/${id}`);
+          console.log('Raw API response:', response.data);
+          
           if (response.data) {
-            const course = response.data;
+            // Handle different API response formats
+            let course;
+            
+            if (response.data.success && response.data.data) {
+              // New API format with success/data wrapper
+              console.log('Using new API format (success/data)');
+              course = response.data.data;
+            } else {
+              // Old format (direct object)
+              console.log('Using old API format (direct object)');
+              course = response.data;
+            }
+            
+            console.log('Processed course data:', course);
+            
+            if (!course.id || !course.name) {
+              console.error('Invalid course data structure:', course);
+              setError('Course data is in an unexpected format.');
+              return;
+            }
+            
+            // Ensure we have the tournamentId, either directly or from the tournament relation
+            const tournamentId = course.tournamentId || (course.tournament?.id);
+            
+            if (!tournamentId) {
+              console.warn('No tournamentId found in course data:', course);
+            }
+            
             setCourseData({
               id: course.id,
               name: course.name,
-              tournamentId: course.tournamentId,
+              tournamentId: tournamentId || '',
               holes: course.holes?.map((hole: any) => ({
                 id: hole.id,
                 number: hole.number,
@@ -49,6 +79,10 @@ export default function EditCourse() {
                 isPar3: hole.par === 3
               })) || []
             });
+            console.log('Course data set successfully');
+          } else {
+            console.error('Empty response data');
+            setError('Received empty response from server.');
           }
         } catch (err) {
           console.error('Error fetching course:', err);
@@ -64,9 +98,27 @@ export default function EditCourse() {
   useEffect(() => {
     const fetchTournaments = async () => {
       try {
+        console.log('Fetching tournaments');
         const response = await axios.get('/api/tournaments');
+        console.log('Tournaments API response:', response.data);
+        
         if (response.data) {
-          setTournaments(Array.isArray(response.data) ? response.data : []);
+          let tournamentsData;
+          
+          if (response.data.success && Array.isArray(response.data.data)) {
+            // New API format with success/data
+            tournamentsData = response.data.data;
+          } else if (Array.isArray(response.data)) {
+            // Old format (array)
+            tournamentsData = response.data;
+          } else {
+            // Unknown format
+            console.error('Unknown tournaments data format:', response.data);
+            tournamentsData = [];
+          }
+          
+          setTournaments(tournamentsData);
+          console.log('Tournaments set:', tournamentsData.length);
         }
       } catch (err) {
         console.error('Error fetching tournaments:', err);
@@ -91,13 +143,23 @@ export default function EditCourse() {
   const handleHoleChange = (index: number, field: string, value: any) => {
     if (courseData) {
       const newHoles = [...courseData.holes];
+      
+      // Parse value to number safely
+      let parsedValue = value;
+      if (typeof value === 'string') {
+        if (['number', 'par', 'handicap', 'distance'].includes(field)) {
+          const num = parseInt(value);
+          parsedValue = isNaN(num) ? 0 : num;
+        }
+      }
+      
       newHoles[index] = {
         ...newHoles[index],
-        [field]: typeof value === 'string' ? parseInt(value) : value
+        [field]: parsedValue
       };
       
       if (field === 'par') {
-        newHoles[index].isPar3 = parseInt(value) === 3;
+        newHoles[index].isPar3 = parsedValue === 3;
       }
       
       setCourseData({
@@ -185,17 +247,29 @@ export default function EditCourse() {
     setError('');
     
     try {
-      await axios.put(`/api/courses/${id}`, {
+      // Ensure all numeric fields are actually numbers
+      const sanitizedHoles = courseData.holes.map(hole => ({
+        number: Number(hole.number) || 0,
+        par: Number(hole.par) || 4,
+        handicap: Number(hole.handicap) || 0,
+        distance: Number(hole.distance) || 0,
+        isPar3: Boolean(hole.isPar3)
+      }));
+      
+      // Print debug info
+      console.log('Submitting course update:', {
         name: courseData.name,
         tournamentId: courseData.tournamentId,
-        holes: courseData.holes.map(hole => ({
-          number: hole.number,
-          par: hole.par,
-          handicap: hole.handicap,
-          distance: hole.distance,
-          isPar3: hole.isPar3
-        }))
+        holes: sanitizedHoles.length
       });
+      
+      const response = await axios.put(`/api/courses/${id}`, {
+        name: courseData.name,
+        tournamentId: courseData.tournamentId,
+        holes: sanitizedHoles
+      });
+      
+      console.log('Update response:', response.data);
       
       setIsSaved(true);
       setLoading(false);
@@ -206,7 +280,34 @@ export default function EditCourse() {
       }, 1500);
     } catch (err: any) {
       console.error('Error updating course:', err);
-      setError(err.response?.data?.error || 'Failed to update course. Please try again.');
+      // Get more detailed error info
+      let errorMessage = 'Failed to update course. Please try again.';
+      
+      if (err.response?.data) {
+        const errorData = err.response.data;
+        // Use the main error message from the API
+        if (errorData.error) {
+          errorMessage = errorData.error;
+        }
+        
+        // If there's detailed information, use that too
+        if (errorData.details) {
+          if (typeof errorData.details === 'string') {
+            // If details is just a string, append it
+            errorMessage += `: ${errorData.details}`;
+          } else if (errorData.details.message) {
+            // If details has a message property, use that
+            errorMessage += `: ${errorData.details.message}`;
+          }
+        }
+        
+        // Special handling for foreign key constraint errors
+        if (errorData.statusCode === 409) {
+          errorMessage = 'This course has match data and cannot be modified. Please contact an administrator for assistance.';
+        }
+      }
+      
+      setError(errorMessage);
       setLoading(false);
     }
   };

@@ -171,7 +171,7 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({
                               <h4 className="text-base font-medium text-gray-900">
                                 {match.format}
                               </h4>
-                              <span className="ml-2 bg-blue-100 text-blue-800 text-xs px-2 py-0.5 rounded-full">
+                              <span className="ml-2 bg-green-100 text-green-800 text-xs px-2 py-0.5 rounded-full">
                                 {new Date(match.teeTime).toLocaleTimeString([], {
                                   hour: 'numeric',
                                   minute: '2-digit',
@@ -181,7 +181,7 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({
                               </span>
                             </div>
                             <div className="mt-1 flex items-center text-sm text-gray-500">
-                              <span className="text-blue-600 font-medium">
+                              <span className="text-green-600 font-medium">
                                 {match.homeTeam}
                               </span>
                               <span className="mx-1">vs</span>
@@ -196,7 +196,7 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({
                                 <div className="flex flex-wrap gap-x-4">
                                   <div className="flex items-center">
                                     <UsersIcon className="h-3 w-3 mr-1" />
-                                    <span className="text-blue-600">
+                                    <span className="text-green-600">
                                       {matchPlayerData[match.id].homePlayers.length > 0
                                         ? matchPlayerData[match.id].homePlayers
                                             .map((p: any) => p.name)

@@ -24,11 +24,11 @@ export default function FinancialOverview({ tournament, playerCount }: Financial
           <div className="bg-gray-50 p-4 rounded-md border border-gray-200">
             <div className="flex justify-between mb-2">
               <span className="text-gray-600">Buy-in:</span>
-              <span className="font-medium">${tournament.buyIn || 0}</span>
+              <span className="font-medium">${(tournament.buyIn || 0).toFixed(2)}</span>
             </div>
             <div className="flex justify-between mb-2">
               <span className="text-gray-600">Total Prize Pool:</span>
-              <span className="font-medium">${(tournament.buyIn || 0) * playerCount}</span>
+              <span className="font-medium">${((tournament.buyIn || 0) * playerCount).toFixed(2)}</span>
             </div>
             <div className="flex justify-between mb-2">
               <span className="text-gray-600">Players:</span>
@@ -50,7 +50,7 @@ export default function FinancialOverview({ tournament, playerCount }: Financial
                       place === '3' ? '3rd Place' : `${place}th Place`}:
                     </span>
                     <span className="font-medium">
-                      {tournament.payoutStructure?.[place]}% (${amount})
+                      {tournament.payoutStructure?.[place]}% (${amount.toFixed(2)})
                     </span>
                   </div>
                 ))}

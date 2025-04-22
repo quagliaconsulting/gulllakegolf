@@ -12,6 +12,7 @@ const fetcher = (url: string) => axios.get(url).then(res => res.data);
 export default function Players() {
   const [searchTerm, setSearchTerm] = useState('');
   const router = useRouter();
+  const [isCreatingDummy, setIsCreatingDummy] = useState(false);
 
   // Fetch players from API
   const { data, error, isLoading, mutate } = useSWR(
@@ -26,65 +27,68 @@ export default function Players() {
   
   // Replace fallback data with API call
   useEffect(() => {
+    // Helper function to set empty players list
+    const setEmptyPlayers = () => {
+      console.log('No players found. Try running the create dummy tournament endpoint.');
+      // Empty players list
+      mutate({ 
+        players: []
+      }, false);
+    };
+    
     // If no data, attempt to fetch real data
     const fetchPlayers = async () => {
       try {
         console.log('Fetching players data from API...');
         
-        // Include auth token in headers
-        const token = localStorage.getItem('token');
-        const headers = token ? { Authorization: `Bearer ${token}` } : {};
+        // Include auth token in headers - bypassing for development
+        // const token = localStorage.getItem('token');
+        // const headers = token ? { Authorization: `Bearer ${token}` } : {};
         
-        const response = await axios.get('/api/players', { headers });
+        // Force cache busting with timestamp
+        const timestamp = new Date().getTime();
+        const response = await axios.get(`/api/players?t=${timestamp}`, { 
+          // headers 
+        });
+        
         console.log('API response:', response.data);
         
         if (response.data) {
           // Check if data is already in expected format
-          if (Array.isArray(response.data.players)) {
+          if (response.data.success && Array.isArray(response.data.data?.players)) {
+            console.log(`Found ${response.data.data.players.length} players in API response`);
+            mutate({ players: response.data.data.players }, false);
+          } else if (Array.isArray(response.data.players)) {
+            console.log(`Found ${response.data.players.length} players in API response`);
             mutate({ players: response.data.players }, false);
           } else if (Array.isArray(response.data)) {
             // If data is an array, wrap it
+            console.log(`Found ${response.data.length} players in array format`);
             mutate({ players: response.data }, false);
           } else {
             console.error('Unexpected data format:', response.data);
-            useFallbackData();
+            setEmptyPlayers();
           }
         }
       } catch (error) {
         console.error('Error fetching players:', error);
-        useFallbackData();
+        setEmptyPlayers();
       }
-    };
-    
-    const useFallbackData = () => {
-      console.log('Using fallback player data');
-      // Fallback to dummy data if API call fails
-      mutate({ 
-        players: [
-          { id: '1', name: 'James Miller', handicapIndex: 16.0, team: { name: 'Spartan Dawgs' } },
-          { id: '2', name: 'Tom Wilson', handicapIndex: 12.4, team: { name: 'Spartan Dawgs' } },
-          { id: '3', name: 'Steve Adams', handicapIndex: 8.0, team: { name: 'Spartan Dawgs' } },
-          { id: '4', name: 'Brian Taylor', handicapIndex: 14.2, team: { name: 'Spartan Dawgs' } },
-          { id: '5', name: 'Kevin Brown', handicapIndex: 10.5, team: { name: 'Spartan Dawgs' } },
-          { id: '6', name: 'Mark Johnson', handicapIndex: 7.8, team: { name: 'Spartan Dawgs' } },
-          { id: '7', name: 'Dan Johnson', handicapIndex: 7.8, team: { name: 'Invited Guests' } },
-          { id: '8', name: 'Mike Smith', handicapIndex: 10.2, team: { name: 'Invited Guests' } },
-          { id: '9', name: 'Chris Davis', handicapIndex: 12.8, team: { name: 'Invited Guests' } },
-          { id: '10', name: 'Bob Martin', handicapIndex: 11.2, team: { name: 'Invited Guests' } },
-          { id: '11', name: 'Alex Robinson', handicapIndex: 9.3, team: { name: 'Invited Guests' } },
-          { id: '12', name: 'Dave Wilson', handicapIndex: 15.6, team: { name: 'Invited Guests' } },
-        ]
-      }, false);
     };
     
     fetchPlayers();
   }, [mutate]);
 
-  // Filter players by search term
-  const filteredPlayers = data?.players.filter((player: any) => 
-    player.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    player.team.name.toLowerCase().includes(searchTerm.toLowerCase())
-  ) || [];
+  // Filter players by search term with safety checks
+  const filteredPlayers = data?.players
+    ? data.players.filter((player: any) => {
+        const playerName = player?.name?.toLowerCase() || '';
+        const teamName = player?.team?.name?.toLowerCase() || '';
+        const searchLower = searchTerm.toLowerCase();
+        
+        return playerName.includes(searchLower) || teamName.includes(searchLower);
+      })
+    : [];
 
   const handleDeletePlayer = async (id: string) => {
     if (!confirm('Are you sure you want to delete this player?')) return;
@@ -104,6 +108,36 @@ export default function Players() {
     }
   };
 
+  const createDummyTournament = async () => {
+    if (!confirm('This will create a new dummy tournament with sample data. Continue?')) {
+      return;
+    }
+    
+    try {
+      setIsCreatingDummy(true);
+      const response = await fetch('/api/dev/create-dummy-tournament', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (response.ok) {
+        const result = await response.json();
+        alert(`Created dummy tournament: ${result.data.tournamentName} with ${result.data.playersCreated} players. Refresh the page to see them.`);
+        mutate(); // Refresh the data
+      } else {
+        const error = await response.json();
+        alert(`Error creating dummy tournament: ${error.error}`);
+      }
+    } catch (error) {
+      console.error('Error creating dummy tournament:', error);
+      alert('Failed to create dummy tournament. See console for details.');
+    } finally {
+      setIsCreatingDummy(false);
+    }
+  };
+
   return (
     <>
       <Head>
@@ -118,7 +152,7 @@ export default function Players() {
               A list of all players including their handicap index and team assignment.
             </p>
           </div>
-          <div className="mt-4 sm:ml-16 sm:mt-0 sm:flex-none">
+          <div className="mt-4 sm:ml-16 sm:mt-0 sm:flex space-x-3">
             <Link
               href="/players/new"
               passHref
@@ -127,6 +161,17 @@ export default function Players() {
             >
               Add Player
             </Link>
+
+            {/* Only show in development mode */}
+            {process.env.NODE_ENV !== 'production' && (
+              <button
+                onClick={createDummyTournament}
+                disabled={isCreatingDummy}
+                className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 disabled:bg-gray-400"
+              >
+                {isCreatingDummy ? 'Creating...' : 'Create Dummy Tournament'}
+              </button>
+            )}
           </div>
         </div>
 
@@ -180,7 +225,19 @@ export default function Players() {
                       </tr>
                     ) : filteredPlayers.length === 0 ? (
                       <tr>
-                        <td colSpan={4} className="p-4 text-center">No players found</td>
+                        <td colSpan={4} className="p-4 text-center">
+                          No players found.
+                          {process.env.NODE_ENV !== 'production' && (
+                            <div className="mt-2">
+                              <button 
+                                onClick={createDummyTournament}
+                                className="text-primary hover:text-primary-dark"
+                              >
+                                Create a dummy tournament with players
+                              </button>
+                            </div>
+                          )}
+                        </td>
                       </tr>
                     ) : (
                       filteredPlayers.map((player: any) => (
@@ -194,13 +251,18 @@ export default function Players() {
                             </div>
                           </td>
                           <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                            {player.handicapIndex.toFixed(1)}
+                            {typeof player.handicapIndex === 'number' 
+                              ? player.handicapIndex.toFixed(1) 
+                              : (player.handicapIndex || 'N/A')}
                           </td>
                           <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                            {player.team.name === 'Spartan Dawgs' ? 
-                              <span className="text-forest-green font-medium">Spartan Dawgs</span> : 
-                              player.team.name
-                            }
+                            {player.team ? (
+                              player.team.name === 'Spartan Dawgs' ? 
+                                <span className="text-forest-green font-medium">Spartan Dawgs</span> : 
+                                player.team.name
+                            ) : (
+                              <span className="text-gray-400">Not assigned</span>
+                            )}
                           </td>
                           <td className="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
                             <Link

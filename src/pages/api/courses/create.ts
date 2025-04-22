@@ -1,20 +1,27 @@
 import { NextApiRequest, NextApiResponse } from 'next';
-import { PrismaClient } from '@prisma/client';
-import jwt from 'jsonwebtoken';
 import { verifyToken } from '@/utils/auth';
+import { CourseService } from '@/services/course/courseService';
+import { TournamentService } from '@/services/tournament/tournamentService';
+import { 
+  sendSuccess, 
+  sendError, 
+  sendNotFound, 
+  sendMethodNotAllowed,
+  sendAuthError
+} from '@/services/api/apiResponse';
 
-const prisma = new PrismaClient();
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
+const courseService = new CourseService();
+const tournamentService = new TournamentService();
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   // Verify JWT token
   const authHeader = req.headers.authorization;
   const token = authHeader?.startsWith('Bearer ') 
     ? authHeader.substring(7) 
-    : req.cookies.token;
+    : req.cookies?.token;
 
   if (!token) {
-    return res.status(401).json({ error: 'Authentication required' });
+    return sendAuthError(res, 'Authentication required');
   }
 
   try {
@@ -28,49 +35,34 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       
       // Validate required fields
       if (!name || !tournamentId || !holes || !Array.isArray(holes)) {
-        return res.status(400).json({ error: 'Name, tournament ID, and hole information are required' });
+        return sendError(res, 'Name, tournament ID, and hole information are required', 400);
       }
       
       // Check if tournament exists
-      const tournament = await prisma.tournament.findUnique({
-        where: { id: tournamentId },
-      });
+      const tournament = await tournamentService.getTournamentById(tournamentId, false);
       
       if (!tournament) {
-        return res.status(404).json({ error: 'Tournament not found' });
+        return sendNotFound(res, 'Tournament not found');
       }
       
-      // Create course with holes
-      const course = await prisma.course.create({
-        data: {
-          name,
-          tournamentId,
-          holes: {
-            create: holes.map((hole: any) => ({
-              number: hole.number,
-              par: hole.par,
-              handicap: hole.handicap,
-              distance: hole.distance,
-            })),
-          },
+      // Create course with holes and safe number parsing
+      const course = await courseService.createCourse({
+        name,
+        tournament: {
+          connect: { id: tournamentId }
         },
-        include: {
-          holes: true,
-          tournament: {
-            select: {
-              name: true,
-            },
-          },
-        },
+        holes
       });
       
-      return res.status(201).json(course);
+      return sendSuccess(res, course, 201);
     }
     
     // Method not allowed
-    return res.status(405).json({ error: 'Method not allowed' });
+    return sendMethodNotAllowed(res, ['POST']);
   } catch (error) {
     console.error('API error:', error);
-    return res.status(500).json({ error: 'Internal server error' });
+    return sendError(res, 'Internal server error', 500, {
+      details: error instanceof Error ? error.message : String(error)
+    });
   }
 }

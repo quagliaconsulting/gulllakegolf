@@ -10,7 +10,7 @@ import {
 import { useBatchAssign } from '../hooks/useBatchAssign';
 import DaySelector from './DaySelector';
 import MatchAssignmentCard from './MatchAssignmentCard';
-import SinglesFoursomeEditor from '@/components/tournaments/SinglesFoursomeEditor';
+import SinglesFoursomeEditor from '@/features/tournaments/components/SinglesFoursomeEditor';
 
 interface BatchAssignPageProps {
   tournamentId: string;
@@ -48,7 +48,7 @@ const BatchAssignPage: React.FC<BatchAssignPageProps> = ({ tournamentId }) => {
           <div>
             <Link 
               href={`/tournaments/${tournamentId}`} 
-              className="inline-flex items-center text-sm text-blue-600 hover:text-blue-800 mb-2"
+              className="inline-flex items-center text-sm text-green-600 hover:text-green-800 mb-2"
             >
               <ArrowLeftIcon className="h-4 w-4 mr-1" />
               Back to Tournament
@@ -131,7 +131,7 @@ const BatchAssignPage: React.FC<BatchAssignPageProps> = ({ tournamentId }) => {
                 type="button"
                 onClick={savePlayerAssignments}
                 disabled={saving}
-                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
+                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50"
               >
                 {saving ? (
                   <>

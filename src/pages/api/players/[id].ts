@@ -1,7 +1,10 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { PrismaClient } from '@prisma/client';
+import { PlayerService } from '@/services/player';
+import { AuthService } from '@/services/api/authService';
+import { sendSuccess, sendError, sendNotFound, sendMethodNotAllowed } from '@/services/api/apiResponse';
 
-const prisma = new PrismaClient();
+// Initialize the player service
+const playerService = new PlayerService();
 
 export default async function handler(
   req: NextApiRequest,
@@ -10,60 +13,53 @@ export default async function handler(
   const { id } = req.query;
   
   if (!id || typeof id !== 'string') {
-    return res.status(400).json({ error: 'Invalid player ID' });
+    return sendError(res, 'Invalid player ID', 400);
   }
   
+  // Authenticate the request (commented out for development)
+  // const user = await AuthService.requireAuth(req, res);
+  // if (!user) return; // Response is already sent by requireAuth
+  
+  // Handle different HTTP methods
   if (req.method === 'GET') {
     try {
-      const player = await prisma.player.findUnique({
-        where: { id },
-        include: {
-          team: true,
-          accommodation: true
-        }
-      });
+      const player = await playerService.getPlayerById(id);
       
       if (!player) {
-        return res.status(404).json({ error: 'Player not found' });
+        return sendNotFound(res, 'Player not found');
       }
       
-      res.status(200).json({ player });
+      sendSuccess(res, { player });
     } catch (error) {
       console.error('Error fetching player:', error);
-      res.status(500).json({ error: 'Failed to fetch player' });
+      sendError(res, 'Failed to fetch player');
     }
   } else if (req.method === 'PUT') {
     try {
       const updateData = req.body;
       
-      const player = await prisma.player.update({
-        where: { id },
-        data: {
-          name: updateData.name,
-          handicapIndex: parseFloat(updateData.handicapIndex),
-          teamId: updateData.teamId,
-          accommodationId: updateData.accommodationId || undefined
-        }
+      const player = await playerService.updatePlayer(id, {
+        name: updateData.name,
+        handicapIndex: parseFloat(updateData.handicapIndex),
+        teamId: updateData.teamId,
+        accommodationId: updateData.accommodationId
       });
       
-      res.status(200).json({ player });
+      sendSuccess(res, { player });
     } catch (error) {
       console.error('Error updating player:', error);
-      res.status(500).json({ error: 'Failed to update player' });
+      sendError(res, 'Failed to update player');
     }
   } else if (req.method === 'DELETE') {
     try {
-      await prisma.player.delete({
-        where: { id }
-      });
+      await playerService.deletePlayer(id);
       
-      res.status(200).json({ message: 'Player deleted successfully' });
+      sendSuccess(res, { message: 'Player deleted successfully' });
     } catch (error) {
       console.error('Error deleting player:', error);
-      res.status(500).json({ error: 'Failed to delete player' });
+      sendError(res, 'Failed to delete player');
     }
   } else {
-    res.setHeader('Allow', ['GET', 'PUT', 'DELETE']);
-    res.status(405).end(`Method ${req.method} Not Allowed`);
+    sendMethodNotAllowed(res, ['GET', 'PUT', 'DELETE']);
   }
 }

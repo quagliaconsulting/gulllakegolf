@@ -1,16 +1,18 @@
 import useSWR from 'swr';
-import api, { fetchData, postData, putData, deleteData } from '@/utils/api';
-
-const fetcher = (url: string) => fetchData(url);
+import { useApi, postApi, putApi, deleteApi, fetcher } from '@/services/api/apiClient';
 
 /**
  * Hook to fetch all tournaments
  */
 export function useTournaments() {
-  const { data, error, isLoading, mutate } = useSWR('/api/tournaments', fetcher);
+  const { data, error, isLoading, mutate } = useApi('/api/tournaments');
+
+  // Handle both old and new API response formats
+  const tournaments = data && Array.isArray(data) ? data : 
+                     (data && Array.isArray(data.data) ? data.data : []);
 
   return {
-    tournaments: data || [],
+    tournaments: tournaments || [],
     isLoading,
     isError: error,
     mutate
@@ -21,9 +23,8 @@ export function useTournaments() {
  * Hook to fetch a specific tournament by ID
  */
 export function useTournament(id: string) {
-  const { data, error, isLoading, mutate } = useSWR(
-    id ? `/api/tournaments/${id}` : null,
-    fetcher
+  const { data, error, isLoading, mutate } = useApi(
+    id ? `/api/tournaments/${id}` : null
   );
 
   return {
@@ -40,18 +41,15 @@ export function useTournament(id: string) {
 export async function createTournament(tournamentData: any) {
   try {
     console.log('Creating tournament with data:', tournamentData);
-    const response = await postData('/api/tournaments', tournamentData);
-    console.log('API response:', response);
+    // The postApi function now returns the 'data' property from the response
+    const tournament = await postApi('/api/tournaments', tournamentData);
+    console.log('API response tournament:', tournament);
     
-    // Handle different response formats
-    if (response && response.tournament) {
-      return response.tournament;
-    } else if (response && response.id) {
-      // If the response is the tournament object itself
-      return response;
+    if (tournament) {
+      return tournament;
     } else {
-      console.error('Unexpected response format:', response);
-      throw new Error('Invalid response format from server');
+      console.error('Unexpected empty response');
+      throw new Error('Empty response from server');
     }
   } catch (error) {
     console.error('Error creating tournament:', error);
@@ -64,7 +62,7 @@ export async function createTournament(tournamentData: any) {
  */
 export async function updateTournament(id: string, tournamentData: any) {
   try {
-    const response = await putData(`/api/tournaments/${id}`, tournamentData);
+    const response = await putApi(`/api/tournaments/${id}`, tournamentData);
     return response.tournament;
   } catch (error) {
     console.error('Error updating tournament:', error);
@@ -77,7 +75,7 @@ export async function updateTournament(id: string, tournamentData: any) {
  */
 export async function deleteTournament(id: string) {
   try {
-    const response = await deleteData(`/api/tournaments/${id}`);
+    const response = await deleteApi(`/api/tournaments/${id}`);
     return response;
   } catch (error) {
     console.error('Error deleting tournament:', error);

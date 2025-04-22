@@ -10,7 +10,7 @@ import ScorecardsTab from './ScorecardsTab';
 import LeaderboardTab from './LeaderboardTab';
 import TeamsTab from './TeamsTab';
 import SettingsTab from './SettingsTab';
-import MoneyTab from '@/components/tournaments/MoneyTab';
+import MoneyTab from './MoneyTab';
 
 export const TournamentDetails: React.FC = () => {
   const router = useRouter();

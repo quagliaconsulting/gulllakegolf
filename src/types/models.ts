@@ -303,6 +303,13 @@ export interface SkinsResult {
   playerId: string;
   player?: Player;
   matchId?: string;
+  match?: {
+    id: string;
+    format?: {
+      id: string;
+      formatName: string;
+    }
+  };
   holeNumber: number;
   score: number;
   prize?: number;

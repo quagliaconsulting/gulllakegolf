@@ -1,12 +1,19 @@
 import axios from 'axios';
 
 // Create axios instance with auth token
+// NOTE: This api client is deprecated and will be removed.
+// Please use @/services/api/apiClient.ts instead
 const api = axios.create({
   baseURL: process.env.NEXT_PUBLIC_API_URL || '',
   headers: {
     'Content-Type': 'application/json',
   },
 });
+
+// Log usage of deprecated api client
+if (typeof window !== 'undefined') {
+  console.warn('[DEPRECATED] Using old api client from utils/api.ts - please migrate to services/api/apiClient.ts');
+}
 
 // Add request interceptor to include auth token
 api.interceptors.request.use(

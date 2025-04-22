@@ -504,7 +504,7 @@ export default function Tournaments() {
                               <span
                                 className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${
                                   tournament.status === 'upcoming'
-                                    ? 'bg-blue-100 text-blue-800'
+                                    ? 'bg-green-100 text-green-800'
                                     : tournament.status === 'active'
                                     ? 'bg-green-100 text-green-800'
                                     : 'bg-gray-100 text-gray-800'
@@ -521,7 +521,7 @@ export default function Tournaments() {
                                     return (
                                       <span key={index}>
                                         <span 
-                                          className={teamName === 'Spartan Dawgs' ? 'text-forest-green font-medium' : 'text-blue-700 font-medium'}
+                                          className={teamName === 'Spartan Dawgs' ? 'text-green-700 font-medium' : 'text-red-700 font-medium'}
                                         >
                                           {teamName}
                                         </span>
@@ -658,11 +658,11 @@ export default function Tournaments() {
                         <div className="flex-shrink-0">
                           <div className={`w-8 h-8 sm:w-10 sm:h-10 rounded-full flex items-center justify-center ${
                             tournament.status === 'active' ? 'bg-green-100' : 
-                            tournament.status === 'upcoming' ? 'bg-blue-100' : 'bg-gray-100'
+                            tournament.status === 'upcoming' ? 'bg-green-100' : 'bg-gray-100'
                           }`}>
                             <TrophyIcon className={`h-5 w-5 sm:h-6 sm:w-6 ${
                               tournament.status === 'active' ? 'text-green-600' : 
-                              tournament.status === 'upcoming' ? 'text-blue-600' : 'text-gray-600'
+                              tournament.status === 'upcoming' ? 'text-green-600' : 'text-gray-600'
                             }`} />
                           </div>
                         </div>
@@ -676,7 +676,7 @@ export default function Tournaments() {
                             <span
                               className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium mr-2 ${
                                 tournament.status === 'upcoming'
-                                  ? 'bg-blue-100 text-blue-800'
+                                  ? 'bg-green-100 text-green-800'
                                   : tournament.status === 'active'
                                   ? 'bg-green-100 text-green-800'
                                   : 'bg-gray-100 text-gray-800'
@@ -791,8 +791,8 @@ export default function Tournaments() {
                                 key={typeof team === 'object' ? team.id : teamName} 
                                 className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
                                   teamName === 'Spartan Dawgs' 
-                                    ? 'bg-green-100 text-forest-green' 
-                                    : 'bg-blue-100 text-blue-700'
+                                    ? 'bg-green-100 text-green-700' 
+                                    : 'bg-red-100 text-red-700'
                                 }`}
                               >
                                 {teamName}

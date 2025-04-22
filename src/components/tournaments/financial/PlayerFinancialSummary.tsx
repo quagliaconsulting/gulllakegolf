@@ -1,5 +1,6 @@
 import React from 'react';
 import { Tournament } from '@/types/models';
+import { calculateTeamPayouts } from '@/utils/prizeCalculator';
 
 interface PlayerFinancialSummaryProps {
   tournament: Tournament;
@@ -20,6 +21,46 @@ export default function PlayerFinancialSummary({
   ctpPrizePerHole,
   skinsPrizePerHole
 }: PlayerFinancialSummaryProps) {
+  // Calculate team payouts for prize distribution
+  const teamPayouts = calculateTeamPayouts(
+    tournament.buyIn || 0,
+    players.length || 0,
+    tournament.payoutStructure as Record<string, number> || {},
+    tournament.teams?.length || 2
+  );
+  
+  // Calculate team standings to determine winners
+  const teamStandings = React.useMemo(() => {
+    // Group players by team
+    const teamMap: Record<string, { 
+      id: string, 
+      name: string, 
+      totalPoints: number, 
+      players: any[] 
+    }> = {};
+    
+    players.forEach(player => {
+      if (player.team) {
+        if (!teamMap[player.team.id]) {
+          // Try to get team points from the tournament data if available
+          // Note: Need to cast as 'any' since 'totalPoints' is not in the Team type definition
+          const teamPoints = (tournament.teams?.find(t => t.id === player.team?.id) as any)?.totalPoints || 0;
+          
+          teamMap[player.team.id] = {
+            id: player.team.id,
+            name: player.team.name,
+            totalPoints: teamPoints,
+            players: []
+          };
+        }
+        teamMap[player.team.id].players.push(player);
+      }
+    });
+    
+    // Sort teams by points (normally would be calculated from matches)
+    // For now, we have to rely on points from tournament API
+    return Object.values(teamMap).sort((a, b) => b.totalPoints - a.totalPoints);
+  }, [players]);
   // Log player information for debugging
   console.log('PlayerFinancialSummary received:', {
     playerCount: players?.length || 0,
@@ -109,7 +150,24 @@ export default function PlayerFinancialSummary({
                 ?.filter((result: any) => result.player?.id === player.id)
                 .reduce((sum: number, _: any) => sum + skinsPrizePerHole, 0) || 0;
               
-              const netTournament = tournamentAmount;
+              // Calculate team prize winnings
+              // Note: We should consider tournament status, but it's not part of the Tournament type yet
+              // For now, we'll calculate for all tournaments, but could be restricted in future
+              let teamPrizeWinnings = 0;
+              if (player.team) {
+                // Find player's team position in standings
+                const teamPosition = teamStandings.findIndex(team => team.id === player.team.id) + 1;
+                if (teamPosition > 0 && teamPosition <= Object.keys(teamPayouts).length) {
+                  // Get team payout amount
+                  const teamPayout = teamPayouts[teamPosition.toString()] || 0;
+                  // Divide by number of players on team
+                  const playersOnTeam = teamStandings.find(t => t.id === player.team.id)?.players.length || 1;
+                  teamPrizeWinnings = playersOnTeam > 0 ? teamPayout / playersOnTeam : 0;
+                }
+              }
+              
+              // Calculate net tournament cost (buy-in minus prize winnings)
+              const netTournament = tournamentAmount - teamPrizeWinnings;
               const netCTP = ctpStatus ? ctpAmount - ctpWinnings : 0;
               const netSkins = skinsStatus ? skinsAmount - skinsWinnings : 0;
               const netTotal = netTournament + netCTP + netSkins;
@@ -129,7 +187,14 @@ export default function PlayerFinancialSummary({
                       }`}>
                         {buyInStatus ? 'Paid' : 'Unpaid'}
                       </span>
-                      {buyInStatus && <span className="text-gray-700">${tournamentAmount}</span>}
+                      {buyInStatus && (
+                        <>
+                          <span className="text-gray-700">${tournamentAmount.toFixed(2)}</span>
+                          {teamPrizeWinnings > 0 && (
+                            <span className="text-green-600 mt-1">Team prize: ${teamPrizeWinnings.toFixed(2)}</span>
+                          )}
+                        </>
+                      )}
                     </div>
                   </td>
                   {tournament.hasCTP && (
@@ -142,12 +207,12 @@ export default function PlayerFinancialSummary({
                         </span>
                         {ctpStatus && (
                           <>
-                            <span className="text-gray-700">${ctpAmount}</span>
+                            <span className="text-gray-700">${ctpAmount.toFixed(2)}</span>
                             {ctpWinnings > 0 && (
-                              <span className="text-green-600 mt-1">Won: ${ctpWinnings}</span>
+                              <span className="text-green-600 mt-1">Won: ${ctpWinnings.toFixed(2)}</span>
                             )}
                             <span className={`mt-1 ${netCTP < 0 ? 'text-green-600' : 'text-red-600'}`}>
-                              Net: ${netCTP < 0 ? netCTP * -1 : netCTP}
+                              Net: ${(netCTP < 0 ? netCTP * -1 : netCTP).toFixed(2)}
                               {netCTP < 0 ? ' (profit)' : ' (cost)'}
                             </span>
                           </>
@@ -165,12 +230,12 @@ export default function PlayerFinancialSummary({
                         </span>
                         {skinsStatus && (
                           <>
-                            <span className="text-gray-700">${skinsAmount}</span>
+                            <span className="text-gray-700">${skinsAmount.toFixed(2)}</span>
                             {skinsWinnings > 0 && (
-                              <span className="text-green-600 mt-1">Won: ${skinsWinnings}</span>
+                              <span className="text-green-600 mt-1">Won: ${skinsWinnings.toFixed(2)}</span>
                             )}
                             <span className={`mt-1 ${netSkins < 0 ? 'text-green-600' : 'text-red-600'}`}>
-                              Net: ${netSkins < 0 ? netSkins * -1 : netSkins}
+                              Net: ${(netSkins < 0 ? netSkins * -1 : netSkins).toFixed(2)}
                               {netSkins < 0 ? ' (profit)' : ' (cost)'}
                             </span>
                           </>
@@ -180,12 +245,14 @@ export default function PlayerFinancialSummary({
                   )}
                   <td className="whitespace-nowrap px-3 py-4 text-sm text-center font-medium">
                     <div className="flex flex-col items-center">
-                      <span className="text-gray-700 mb-1">Paid: ${totalAmount}</span>
-                      {(ctpWinnings > 0 || skinsWinnings > 0) && (
-                        <span className="text-green-600 mb-1">Won: ${ctpWinnings + skinsWinnings}</span>
+                      <span className="text-gray-700 mb-1">Paid: ${totalAmount.toFixed(2)}</span>
+                      {(ctpWinnings > 0 || skinsWinnings > 0 || teamPrizeWinnings > 0) && (
+                        <span className="text-green-600 mb-1">
+                          Won: ${(ctpWinnings + skinsWinnings + teamPrizeWinnings).toFixed(2)}
+                        </span>
                       )}
                       <span className={`${netTotal < 0 ? 'text-green-600' : 'text-red-600'} font-semibold`}>
-                        Net: ${netTotal < 0 ? netTotal * -1 : netTotal}
+                        Net: ${(netTotal < 0 ? netTotal * -1 : netTotal).toFixed(2)}
                         {netTotal < 0 ? ' (profit)' : ' (cost)'}
                       </span>
                     </div>

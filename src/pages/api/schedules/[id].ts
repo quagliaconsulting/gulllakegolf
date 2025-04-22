@@ -1,88 +1,42 @@
 import { NextApiRequest, NextApiResponse } from 'next';
-import { PrismaClient } from '@prisma/client';
-import { verifyToken } from '@/utils/auth';
+import { ScheduleService } from '@/services/schedule';
+import { AuthService } from '@/services/api/authService';
+import { sendSuccess, sendError, sendNotFound, sendMethodNotAllowed } from '@/services/api/apiResponse';
 
-const prisma = new PrismaClient();
+// Initialize the schedule service
+const scheduleService = new ScheduleService();
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  // Verify JWT token
-  const authHeader = req.headers.authorization;
-  const token = authHeader?.startsWith('Bearer ') 
-    ? authHeader.substring(7) 
-    : req.cookies?.token;
-
-  if (!token) {
-    return res.status(401).json({ error: 'Authentication required' });
+  // Authenticate the request (commented out for development)
+  // const user = await AuthService.requireAuth(req, res);
+  // if (!user) return; // Response is already sent by requireAuth
+  
+  const id = req.query.id as string;
+  
+  if (!id) {
+    return sendError(res, 'Schedule ID is required', 400);
   }
 
   try {
-    // Verify token with better error handling
-    if (!verifyToken(token, res)) {
-      return; // Response already sent by verifyToken
-    }
-    
-    const id = req.query.id as string;
-    
-    if (!id) {
-      return res.status(400).json({ error: 'Schedule ID is required' });
-    }
-
-    // Check if schedule exists
-    const schedule = await prisma.schedule.findUnique({
-      where: { id }
-    });
-
-    if (!schedule) {
-      return res.status(404).json({ error: 'Schedule not found' });
-    }
-
     // Handle DELETE method
     if (req.method === 'DELETE') {
-      // Delete all matches associated with this schedule
-      await prisma.match.deleteMany({
-        where: { scheduleId: id }
-      });
-      
-      // Delete the schedule
-      await prisma.schedule.delete({
-        where: { id }
-      });
-      
-      return res.status(200).json({ message: 'Schedule and associated matches deleted successfully' });
+      await scheduleService.deleteSchedule(id);
+      return sendSuccess(res, { message: 'Schedule and associated matches deleted successfully' });
     }
     
     // Handle GET method
     if (req.method === 'GET') {
-      const scheduleWithMatches = await prisma.schedule.findUnique({
-        where: { id },
-        include: {
-          tournament: {
-            select: {
-              id: true,
-              name: true
-            }
-          },
-          matches: {
-            include: {
-              format: true,
-              course: true,
-              homeTeam: true,
-              awayTeam: true,
-              points: true
-            }
-          }
-        }
-      });
+      const schedule = await scheduleService.getScheduleById(id);
       
-      if (!scheduleWithMatches) {
-        return res.status(404).json({ error: 'Schedule not found' });
+      if (!schedule) {
+        return sendNotFound(res, 'Schedule not found');
       }
       
       // Transform the data to include team names and tournament info
-      const normalizedDate = new Date(scheduleWithMatches.date);
+      const normalizedDate = new Date(schedule.date);
       normalizedDate.setUTCHours(12, 0, 0, 0);
       
-      const transformedMatches = scheduleWithMatches.matches.map(match => {
+      const transformedMatches = schedule.matches.map(match => {
         const homeTeamName = match.homeTeam?.name || 'Team 1';
         const awayTeamName = match.awayTeam?.name || 'Team 2';
         
@@ -102,26 +56,25 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           course: match.course.name,
           homeTeam: homeTeamName,
           awayTeam: awayTeamName,
-          points: match.points,
           teeTime: match.teeTime.toISOString(),
           startingHole: match.startingHole
         };
       });
       
-      return res.status(200).json({ 
+      return sendSuccess(res, { 
         schedule: {
-          ...scheduleWithMatches,
+          ...schedule,
           date: normalizedDate,
-          tournamentName: scheduleWithMatches.tournament?.name || 'Unknown Tournament',
+          tournamentName: schedule.tournament?.name || 'Unknown Tournament',
           matches: transformedMatches
         }
       });
     }
     
     // Method not allowed
-    return res.status(405).json({ error: 'Method not allowed' });
+    return sendMethodNotAllowed(res, ['GET', 'DELETE']);
   } catch (error) {
     console.error('Error handling schedule request:', error);
-    return res.status(500).json({ error: 'Internal server error' });
+    return sendError(res, 'Internal server error');
   }
 }

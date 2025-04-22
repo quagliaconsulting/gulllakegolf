@@ -33,7 +33,7 @@ export default function CTPSection({
           <div className="bg-gray-50 p-4 rounded-md border border-gray-200">
             <div className="flex justify-between mb-2">
               <span className="text-gray-600">CTP Entry Fee:</span>
-              <span className="font-medium">${tournament.ctpPrizeAmount || 0}/player</span>
+              <span className="font-medium">${(tournament.ctpPrizeAmount || 0).toFixed(2)}/player</span>
             </div>
             <div className="flex justify-between mb-2">
               <span className="text-gray-600">Par 3 Holes:</span>
@@ -45,11 +45,11 @@ export default function CTPSection({
             </div>
             <div className="flex justify-between mb-2">
               <span className="text-gray-600">Total CTP Pot:</span>
-              <span className="font-medium">${(tournament.ctpPrizeAmount || 0) * (ctpParticipants || 0)}</span>
+              <span className="font-medium">${((tournament.ctpPrizeAmount || 0) * (ctpParticipants || 0)).toFixed(2)}</span>
             </div>
             <div className="flex justify-between mb-2">
               <span className="text-gray-600">Prize Per Hole:</span>
-              <span className="font-medium">${ctpPrizePerHole}</span>
+              <span className="font-medium">${ctpPrizePerHole.toFixed(2)}</span>
             </div>
           </div>
         </div>

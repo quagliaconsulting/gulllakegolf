@@ -42,7 +42,7 @@ export function useBatchAssign(tournamentId: string | undefined) {
     data: tournamentData, 
     error: tournamentError 
   } = useApi(
-    tournamentId ? `/tournaments/${tournamentId}` : null,
+    tournamentId ? `/api/tournaments/${tournamentId}` : null,
     { revalidateOnFocus: false }
   );
 
@@ -52,7 +52,7 @@ export function useBatchAssign(tournamentId: string | undefined) {
     error: scheduleError,
     mutate: refreshSchedules 
   } = useApi(
-    tournamentId ? `/schedules?tournamentId=${tournamentId}` : null,
+    tournamentId ? `/api/tournaments/${tournamentId}/schedule` : null,
     { revalidateOnFocus: false }
   );
 
@@ -154,7 +154,7 @@ export function useBatchAssign(tournamentId: string | undefined) {
     try {
       for (let i = 0; i < updatedAssignments.length; i++) {
         const match = updatedAssignments[i];
-        const response = await fetch(`/matches/${match.matchId}/players`);
+        const response = await fetch(`/api/matches/${match.matchId}/players`);
         
         if (response.ok) {
           const data = await response.json();
@@ -255,7 +255,7 @@ export function useBatchAssign(tournamentId: string | undefined) {
       setSaving(true);
       setError(null);
       
-      const response = await fetch('/matches/create-foursome', {
+      const response = await fetch('/api/matches/create-foursome', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -317,7 +317,7 @@ export function useBatchAssign(tournamentId: string | undefined) {
         return;
       }
       
-      const response = await fetch('/matches/batch-assign', {
+      const response = await fetch('/api/matches/batch-assign', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

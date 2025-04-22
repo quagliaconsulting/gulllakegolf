@@ -32,8 +32,21 @@ export default function AssignPlayers() {
   // Set initial selections when data loads
   useEffect(() => {
     if (data) {
-      setSelectedHomePlayers(data.homePlayers.map((p: any) => p.id));
-      setSelectedAwayPlayers(data.awayPlayers.map((p: any) => p.id));
+      // Safely set home players with null checks
+      if (data.homePlayers && Array.isArray(data.homePlayers)) {
+        const filteredHomePlayers = data.homePlayers.filter((p: {id?: string}) => p && p.id);
+        setSelectedHomePlayers(filteredHomePlayers.map((p: {id: string}) => p.id));
+      } else {
+        setSelectedHomePlayers([]);
+      }
+      
+      // Safely set away players with null checks
+      if (data.awayPlayers && Array.isArray(data.awayPlayers)) {
+        const filteredAwayPlayers = data.awayPlayers.filter((p: {id?: string}) => p && p.id);
+        setSelectedAwayPlayers(filteredAwayPlayers.map((p: {id: string}) => p.id));
+      } else {
+        setSelectedAwayPlayers([]);
+      }
       
       // Detect if this is a singles foursome container match
       if (data.isSingles && data.foursomeGroupId && !data.playerToPlayerMatch) {
@@ -343,11 +356,17 @@ export default function AssignPlayers() {
   
   // Get player name by ID
   const getPlayerNameById = (playerId: string) => {
-    const homePlayer = data?.allHomePlayers?.find((p: any) => p.id === playerId);
-    if (homePlayer) return homePlayer.name;
+    if (!playerId) return 'Unknown player';
     
-    const awayPlayer = data?.allAwayPlayers?.find((p: any) => p.id === playerId);
-    if (awayPlayer) return awayPlayer.name;
+    if (data?.allHomePlayers) {
+      const homePlayer = data.allHomePlayers.find((p: any) => p && p.id === playerId);
+      if (homePlayer && homePlayer.name) return homePlayer.name;
+    }
+    
+    if (data?.allAwayPlayers) {
+      const awayPlayer = data.allAwayPlayers.find((p: any) => p && p.id === playerId);
+      if (awayPlayer && awayPlayer.name) return awayPlayer.name;
+    }
     
     return 'Unknown player';
   };
@@ -431,40 +450,41 @@ export default function AssignPlayers() {
                 </p>
               </div>
               <ul className="divide-y divide-gray-200">
-                {data.allHomePlayers.map((player: any) => (
-                  <li key={player.id} className="px-4 py-4 sm:px-6">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center">
-                        <input
-                          id={`home-${player.id}`}
-                          name={`home-${player.id}`}
-                          type="checkbox"
-                          checked={selectedHomePlayers.includes(player.id)}
-                          onChange={() => toggleHomePlayer(player.id)}
-                          className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
-                        />
-                        <label htmlFor={`home-${player.id}`} className="ml-3 flex items-center">
-                          <div className="text-sm font-medium text-gray-900">{player.name}</div>
-                          <div className="text-sm text-gray-500 ml-2">(Handicap: {player.handicapIndex})</div>
-                        </label>
-                      </div>
-                      {selectedHomePlayers.includes(player.id) && (
+                {data.allHomePlayers && data.allHomePlayers.length > 0 ? (
+                  data.allHomePlayers.map((player: any) => (
+                    <li key={player.id} className="px-4 py-4 sm:px-6">
+                      <div className="flex items-center justify-between">
                         <div className="flex items-center">
-                          {/* For foursome mode, show matchup info */}
-                          {singlesMode === 'foursome' && isHomePlayerMatched(player.id) && (
-                            <div className="text-sm text-gray-600 mr-2">
-                              vs. {getPlayerNameById(getOpponentId(player.id, 'home') || '')}
-                            </div>
-                          )}
-                          <div className="text-primary">
-                            <CheckCircleIcon className="h-5 w-5" />
-                          </div>
+                          <input
+                            id={`home-${player.id}`}
+                            name={`home-${player.id}`}
+                            type="checkbox"
+                            checked={selectedHomePlayers.includes(player.id)}
+                            onChange={() => toggleHomePlayer(player.id)}
+                            className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                          />
+                          <label htmlFor={`home-${player.id}`} className="ml-3 flex items-center">
+                            <div className="text-sm font-medium text-gray-900">{player.name}</div>
+                            <div className="text-sm text-gray-500 ml-2">(Handicap: {player.handicapIndex})</div>
+                          </label>
                         </div>
-                      )}
-                    </div>
-                  </li>
-                ))}
-                {data.allHomePlayers.length === 0 && (
+                        {selectedHomePlayers.includes(player.id) && (
+                          <div className="flex items-center">
+                            {/* For foursome mode, show matchup info */}
+                            {singlesMode === 'foursome' && isHomePlayerMatched(player.id) && (
+                              <div className="text-sm text-gray-600 mr-2">
+                                vs. {getPlayerNameById(getOpponentId(player.id, 'home') || '')}
+                              </div>
+                            )}
+                            <div className="text-primary">
+                              <CheckCircleIcon className="h-5 w-5" />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </li>
+                  ))
+                ) : (
                   <li className="px-4 py-4 sm:px-6 text-center text-gray-500">
                     No players available in this team
                   </li>
@@ -481,40 +501,41 @@ export default function AssignPlayers() {
                 </p>
               </div>
               <ul className="divide-y divide-gray-200">
-                {data.allAwayPlayers.map((player: any) => (
-                  <li key={player.id} className="px-4 py-4 sm:px-6">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center">
-                        <input
-                          id={`away-${player.id}`}
-                          name={`away-${player.id}`}
-                          type="checkbox"
-                          checked={selectedAwayPlayers.includes(player.id)}
-                          onChange={() => toggleAwayPlayer(player.id)}
-                          className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
-                        />
-                        <label htmlFor={`away-${player.id}`} className="ml-3 flex items-center">
-                          <div className="text-sm font-medium text-gray-900">{player.name}</div>
-                          <div className="text-sm text-gray-500 ml-2">(Handicap: {player.handicapIndex})</div>
-                        </label>
-                      </div>
-                      {selectedAwayPlayers.includes(player.id) && (
+                {data.allAwayPlayers && data.allAwayPlayers.length > 0 ? (
+                  data.allAwayPlayers.map((player: any) => (
+                    <li key={player.id} className="px-4 py-4 sm:px-6">
+                      <div className="flex items-center justify-between">
                         <div className="flex items-center">
-                          {/* For foursome mode, show matchup info */}
-                          {singlesMode === 'foursome' && isAwayPlayerMatched(player.id) && (
-                            <div className="text-sm text-gray-600 mr-2">
-                              vs. {getPlayerNameById(getOpponentId(player.id, 'away') || '')}
-                            </div>
-                          )}
-                          <div className="text-primary">
-                            <CheckCircleIcon className="h-5 w-5" />
-                          </div>
+                          <input
+                            id={`away-${player.id}`}
+                            name={`away-${player.id}`}
+                            type="checkbox"
+                            checked={selectedAwayPlayers.includes(player.id)}
+                            onChange={() => toggleAwayPlayer(player.id)}
+                            className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                          />
+                          <label htmlFor={`away-${player.id}`} className="ml-3 flex items-center">
+                            <div className="text-sm font-medium text-gray-900">{player.name}</div>
+                            <div className="text-sm text-gray-500 ml-2">(Handicap: {player.handicapIndex})</div>
+                          </label>
                         </div>
-                      )}
-                    </div>
-                  </li>
-                ))}
-                {data.allAwayPlayers.length === 0 && (
+                        {selectedAwayPlayers.includes(player.id) && (
+                          <div className="flex items-center">
+                            {/* For foursome mode, show matchup info */}
+                            {singlesMode === 'foursome' && isAwayPlayerMatched(player.id) && (
+                              <div className="text-sm text-gray-600 mr-2">
+                                vs. {getPlayerNameById(getOpponentId(player.id, 'away') || '')}
+                              </div>
+                            )}
+                            <div className="text-primary">
+                              <CheckCircleIcon className="h-5 w-5" />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </li>
+                  ))
+                ) : (
                   <li className="px-4 py-4 sm:px-6 text-center text-gray-500">
                     No players available in this team
                   </li>

@@ -1,7 +1,6 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { PrismaClient } from '@prisma/client';
-import jwt from 'jsonwebtoken';
-import { verifyToken } from '@/utils/auth';
+import { AuthService } from '@/services/api/authService';
 import formidable, { File } from 'formidable';
 import fs from 'fs';
 import path from 'path';
@@ -13,28 +12,19 @@ export const config = {
 };
 
 const prisma = new PrismaClient();
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
 
 interface FormidableFile extends File {
   filepath: string;
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  // Verify JWT token
-  const authHeader = req.headers.authorization;
-  const token = authHeader?.startsWith('Bearer ') 
-    ? authHeader.substring(7) 
-    : req.cookies?.token;
-
-  if (!token) {
-    return res.status(401).json({ error: 'Authentication required' });
+  // Authenticate using AuthService
+  const user = await AuthService.requireAuth(req, res);
+  if (!user) {
+    return; // Response already sent by requireAuth
   }
 
   try {
-    // Verify token with better error handling
-    if (!verifyToken(token, res)) {
-      return; // Response already sent by verifyToken
-    }
     
     if (req.method === 'POST') {
       // Parse form data

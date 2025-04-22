@@ -11,6 +11,9 @@ export async function middleware(request: NextRequest) {
     '/api/auth/login',
     '/api/auth/register',
     '/api/auth/me',
+    // Add dev endpoints for easier development
+    '/api/dev/create-dummy-tournament',
+    '/api/dev/cleanup-data',
   ];
 
   // Skip middleware for public paths and static files
@@ -25,7 +28,9 @@ export async function middleware(request: NextRequest) {
   }
 
   // Check if the token exists in cookies or headers
+  // Look for token in multiple places
   const token = request.cookies.get('token')?.value || 
+                request.cookies.get('auth_token')?.value ||
                 request.headers.get('authorization')?.split(' ')[1];
   
   console.log('[Middleware] Path:', path);

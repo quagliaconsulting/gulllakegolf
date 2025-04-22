@@ -51,7 +51,7 @@ export const PasswordModal: React.FC<PasswordModalProps> = ({
             </button>
             <button
               type="submit"
-              className="px-4 py-2 text-white bg-blue-600 rounded hover:bg-blue-700"
+              className="px-4 py-2 text-white bg-green-600 rounded hover:bg-green-700"
             >
               Submit
             </button>

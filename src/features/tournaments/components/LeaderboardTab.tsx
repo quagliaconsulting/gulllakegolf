@@ -230,14 +230,17 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {teamStandings.map((team, index) => (
+                  {/* Sort teams by total points in descending order */}
+                  {[...teamStandings]
+                    .sort((a, b) => b.totalPoints - a.totalPoints)
+                    .map((team: TeamStanding, index: number) => (
                     <tr key={team.teamId} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                         {index + 1}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm">
                         <div className="flex items-center">
-                          <div className={`w-2 h-2 rounded-full mr-2 ${team.isHomeTeam ? 'bg-blue-500' : 'bg-red-500'}`}></div>
+                          <div className={`w-2 h-2 rounded-full mr-2 ${team.isHomeTeam ? 'bg-green-500' : 'bg-red-500'}`}></div>
                           <span className="font-medium text-gray-900">{team.teamName}</span>
                         </div>
                       </td>
@@ -302,7 +305,10 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {playerStandings.map((player, index) => (
+                  {/* Sort players by points earned in descending order */}
+                  {[...playerStandings]
+                    .sort((a, b) => b.pointsEarned - a.pointsEarned)
+                    .map((player: PlayerStanding, index: number) => (
                     <tr key={player.playerId} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                         {index + 1}
@@ -312,7 +318,7 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         <div className="flex items-center">
-                          <div className={`w-2 h-2 rounded-full mr-2 ${player.isHomeTeam ? 'bg-blue-500' : 'bg-red-500'}`}></div>
+                          <div className={`w-2 h-2 rounded-full mr-2 ${player.isHomeTeam ? 'bg-green-500' : 'bg-red-500'}`}></div>
                           <span>{player.teamName}</span>
                         </div>
                       </td>

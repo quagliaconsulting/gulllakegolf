@@ -60,7 +60,7 @@ export const TournamentHeader: React.FC<TournamentHeaderProps> = ({
               <span
                 className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
                   tournament.status === 'upcoming'
-                    ? 'bg-blue-100 text-blue-800'
+                    ? 'bg-green-100 text-green-800'
                     : tournament.status === 'active'
                     ? 'bg-green-100 text-green-800'
                     : 'bg-gray-100 text-gray-800'
