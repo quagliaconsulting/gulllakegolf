@@ -19,7 +19,7 @@ export default function EditPlayer() {
   const { id, tournamentId } = router.query;
   const [playerData, setPlayerData] = useState<PlayerFormData | null>(null);
   const [teams, setTeams] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [isSaved, setIsSaved] = useState(false);
 
@@ -27,22 +27,41 @@ export default function EditPlayer() {
   useEffect(() => {
     if (id) {
       const fetchPlayerData = async () => {
+        setLoading(true);
+        setError('');
         try {
           const response = await axios.get(`/api/players/${id}`);
-          if (response.data && response.data.player) {
-            const player = response.data.player;
+          console.log('[EditPlayer] API Response:', response.data); // Log the raw response
+
+          // Try to extract player data, checking common structures
+          let foundPlayer = null;
+          if (response.data?.data?.player) { // Structure: { success: true, data: { player: ... } }
+            foundPlayer = response.data.data.player;
+            console.log('[EditPlayer] Found player in response.data.data.player');
+          } else if (response.data?.player) { // Structure: { player: ... }
+            foundPlayer = response.data.player;
+            console.log('[EditPlayer] Found player in response.data.player');
+          } else {
+             console.log('[EditPlayer] Player data not found in expected structures.');
+          }
+
+          if (foundPlayer) {
             setPlayerData({
-              id: player.id,
-              name: player.name,
-              handicapIndex: player.handicapIndex.toString(),
-              teamId: player.teamId,
-              email: player.email || '',
-              phone: player.phone || ''
+              id: foundPlayer.id,
+              name: foundPlayer.name,
+              handicapIndex: foundPlayer.handicapIndex.toString(),
+              teamId: foundPlayer.teamId,
+              email: foundPlayer.email || '',
+              phone: foundPlayer.phone || ''
             });
+          } else {
+             setError('Player data received in unexpected format.');
           }
         } catch (err) {
           console.error('Error fetching player:', err);
           setError('Failed to load player data. Please try again.');
+        } finally {
+          setLoading(false);
         }
       };
 
@@ -150,8 +169,16 @@ export default function EditPlayer() {
     }
   };
 
-  if (!playerData && !error) {
+  if (loading) {
     return <div className="p-8 text-center">Loading player data...</div>;
+  }
+
+  if (!playerData && !loading && error) {
+    return <div className="p-8 text-center text-red-500">{error}</div>;
+  }
+
+  if (!playerData && !loading && !error) {
+    return <div className="p-8 text-center text-gray-500">Player data not found.</div>;
   }
 
   return (

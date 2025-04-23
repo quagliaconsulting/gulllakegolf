@@ -48,6 +48,8 @@ export const ScorecardPage: React.FC = () => {
     setPasswordInput,
     verifyPasswordAndLock,
     refreshMatch,
+    ctpEligiblePlayers,
+    skinsEligiblePlayers,
   } = useScorecardState(matchId as string);
 
   // Navigate to player assignments
@@ -94,6 +96,11 @@ export const ScorecardPage: React.FC = () => {
         </div>
       </div>
     );
+  }
+
+  // Log the points object when the component re-renders with match data
+  if (match && match.points) {
+    console.log('[ScorecardPage] Match Points Data Received:', JSON.stringify(match.points));
   }
 
   return (
@@ -291,8 +298,7 @@ export const ScorecardPage: React.FC = () => {
           onClose={() => setShowCtpModal(false)}
           holeId={ctpModalData.holeId}
           holeName={ctpModalData.holeName}
-          players={[...match.homePlayers.map((p: any) => ({ ...p, isHomeTeam: true })), 
-                    ...match.awayPlayers.map((p: any) => ({ ...p, isHomeTeam: false }))]}
+          players={ctpEligiblePlayers()}
           onSave={handleSaveCtpWithDistance}
           currentWinnerId={ctpModalData.currentWinnerId}
         />
@@ -305,8 +311,7 @@ export const ScorecardPage: React.FC = () => {
           onClose={() => setShowSkinsModal(false)}
           holeNumber={skinsModalData.holeNumber}
           holeName={skinsModalData.holeName}
-          players={[...match.homePlayers.map((p: any) => ({ ...p, isHomeTeam: true })), 
-                    ...match.awayPlayers.map((p: any) => ({ ...p, isHomeTeam: false }))]}
+          players={match.enhancedPlayers || []}
           onSave={handleSaveSkin}
           currentWinnerId={skinsModalData.currentWinnerId}
           currentScore={skinsModalData.currentScore}

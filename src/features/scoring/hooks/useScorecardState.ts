@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useApi, postApi } from '@/services/api/apiClient';
 
 interface Hole {
@@ -79,6 +79,42 @@ export function useScorecardState(matchId: string | undefined) {
     data: tournamentData,
   } = useApi<any>(data?.match?.tournamentId ? `/api/tournaments/${data?.match?.tournamentId}` : null);
   
+  // Fetch Player Payment Statuses (using the same endpoint as MoneyTab)
+  const tournamentId = data?.match?.tournamentId;
+  const { data: financialData } = useApi<any>(
+    tournamentId ? `/api/tournaments/${tournamentId}/money` : null
+  );
+  
+  // Memoize the filtered player list for CTP
+  const ctpEligiblePlayers = useCallback(() => {
+    const matchData = data?.match;
+    if (!matchData || !matchData.homePlayers || !matchData.awayPlayers || !financialData?.playerPayments) return [];
+
+    const allPlayers = [
+      ...matchData.homePlayers.map((p: any) => ({ ...p, isHomeTeam: true })),
+      ...matchData.awayPlayers.map((p: any) => ({ ...p, isHomeTeam: false }))
+    ];
+
+    return allPlayers.filter(player => 
+      financialData.playerPayments[player.id]?.CTP_ENTRY === true
+    );
+  }, [data?.match, financialData]);
+
+  // Memoize the filtered player list for Skins
+  const skinsEligiblePlayers = useCallback(() => {
+    const matchData = data?.match;
+    if (!matchData || !matchData.homePlayers || !matchData.awayPlayers || !financialData?.playerPayments) return [];
+
+    const allPlayers = [
+      ...matchData.homePlayers.map((p: any) => ({ ...p, isHomeTeam: true })),
+      ...matchData.awayPlayers.map((p: any) => ({ ...p, isHomeTeam: false }))
+    ];
+
+    return allPlayers.filter(player => 
+      financialData.playerPayments[player.id]?.SKINS_ENTRY === true
+    );
+  }, [data?.match, financialData]);
+
   // Get the tournament ID directly from the match data
   const getTournamentId = () => {
     if (!data?.match?.tournamentId) return null;
@@ -225,129 +261,113 @@ export function useScorecardState(matchId: string | undefined) {
       
       // Fetch all matched scores to properly calculate skins
       if (tournamentData.hasSkins && data.match.holes) {
-        // We need to compare scores across all matches to determine true skins
-        const fetchAllMatchScores = async () => {
+        const fetchAllMatchScoresForSkins = async () => {
           try {
             // Get all matches for this tournament
-            const response = await fetch(`/api/tournaments/${tournamentId}/matches`);
-            if (response.ok) {
-              const allMatches = await response.json();
-              
-              // Map of hole number -> lowest scores
-              const lowestScoresByHole: Record<number, { gross: number, net: number }[]> = {};
-              
-              // First initialize with current match's scores
-              data.match.holes.forEach((hole: Hole) => {
-                lowestScoresByHole[hole.number] = [];
-                
-                // Add home team score if available
-                if (hole.homeGross !== null && hole.homeNet !== null) {
-                  lowestScoresByHole[hole.number].push({
-                    gross: hole.homeGross,
-                    net: hole.homeNet
-                  });
-                }
-                
-                // Add away team score if available
-                if (hole.awayGross !== null && hole.awayNet !== null) {
-                  lowestScoresByHole[hole.number].push({
-                    gross: hole.awayGross,
-                    net: hole.awayNet
-                  });
-                }
-              });
-              
-              // Fetch scores for all other matches
-              for (const match of allMatches.matches || []) {
-                if (match.id === data.match.id) continue; // Skip current match
-                
-                // Fetch scores for this match
-                const scoresResponse = await fetch(`/api/matches/${match.id}/scores`);
-                if (scoresResponse.ok) {
-                  const matchData = await scoresResponse.json();
-                  
-                  // Add scores to our mapping
-                  if (matchData?.match?.holes) {
-                    matchData.match.holes.forEach((hole: Hole) => {
-                      if (!lowestScoresByHole[hole.number]) {
-                        lowestScoresByHole[hole.number] = [];
-                      }
-                      
-                      // Add home team score if available
-                      if (hole.homeGross !== null && hole.homeNet !== null) {
-                        lowestScoresByHole[hole.number].push({
-                          gross: hole.homeGross,
-                          net: hole.homeNet
-                        });
-                      }
-                      
-                      // Add away team score if available
-                      if (hole.awayGross !== null && hole.awayNet !== null) {
-                        lowestScoresByHole[hole.number].push({
-                          gross: hole.awayGross,
-                          net: hole.awayNet
-                        });
-                      }
-                    });
+            const allMatchesResponse = await fetch(`/api/tournaments/${tournamentId}/matches`);
+            if (!allMatchesResponse.ok) throw new Error('Failed to fetch all matches');
+            const allMatchesData = await allMatchesResponse.json();
+            const allMatches = allMatchesData.matches || [];
+            
+            // Get the list of player IDs eligible for skins
+            const eligiblePlayerIds = skinsEligiblePlayers().map(p => p.id);
+            console.log('[Skins Calculation] Eligible Player IDs:', eligiblePlayerIds);
+
+            // Map of hole number -> lowest scores FROM ELIGIBLE PLAYERS
+            const lowestScoresByHole: Record<number, { gross: number | null, net: number | null, playerId: string, teamId: string }[]> = {};
+
+            // Process scores for all matches, considering only eligible players
+            for (const currentMatch of allMatches) {
+              // Fetch scores for this match
+              const scoresResponse = await fetch(`/api/matches/${currentMatch.id}/scores`);
+              if (!scoresResponse.ok) continue; // Skip if scores can't be fetched
+              const matchData = await scoresResponse.json();
+              const matchDetails = matchData?.match;
+
+              if (matchDetails?.holes && matchDetails?.homePlayers && matchDetails?.awayPlayers) {
+                matchDetails.holes.forEach((hole: Hole) => {
+                  if (!lowestScoresByHole[hole.number]) {
+                    lowestScoresByHole[hole.number] = [];
                   }
-                }
+
+                  // Process home players
+                  matchDetails.homePlayers.forEach((player: any) => {
+                    // Only consider score if player is eligible
+                    if (eligiblePlayerIds.includes(player.id)) {
+                      const playerScore = hole.homePlayerScores?.[player.id] ?? null;
+                      // Here we need the NET score for the player on this hole. 
+                      // This requires fetching player handicap and hole handicap data, 
+                      // which isn't readily available here without significant restructuring.
+                      // FOR NOW: Use GROSS score as a proxy for skins calculation, 
+                      // acknowledging this is NOT correct for net skins.
+                      // TODO: Refactor skins calculation to properly use NET scores based on player handicaps.
+                      if (playerScore !== null) { 
+                        lowestScoresByHole[hole.number].push({
+                          gross: playerScore, 
+                          net: playerScore, // << USING GROSS FOR NET TEMPORARILY
+                          playerId: player.id, 
+                          teamId: matchDetails.homeTeamId
+                        });
+                      }
+                    }
+                  });
+
+                  // Process away players
+                  matchDetails.awayPlayers.forEach((player: any) => {
+                    // Only consider score if player is eligible
+                    if (eligiblePlayerIds.includes(player.id)) {
+                      const playerScore = hole.awayPlayerScores?.[player.id] ?? null;
+                      // TODO: Use proper NET score calculation here as well.
+                      if (playerScore !== null) {
+                        lowestScoresByHole[hole.number].push({
+                          gross: playerScore, 
+                          net: playerScore, // << USING GROSS FOR NET TEMPORARILY
+                          playerId: player.id, 
+                          teamId: matchDetails.awayTeamId 
+                        });
+                      }
+                    }
+                  });
+                });
               }
-              
-              // Now determine potential skins by finding unique lowest scores
-              const potentialSkinsMap: Record<string, boolean> = {};
-              
-              data.match.holes.forEach((hole: Hole) => {
-                const holeScores = lowestScoresByHole[hole.number] || [];
-                
-                // Sort scores by net score (lower is better)
-                holeScores.sort((a, b) => a.net - b.net);
-                
-                // If there's at least one score
-                if (holeScores.length > 0) {
-                  const lowestNetScore = holeScores[0].net;
-                  
-                  // Check if this is a unique lowest score (a skin)
-                  const isUnique = holeScores.filter(score => score.net === lowestNetScore).length === 1;
-                  
-                  // Check if current match has the unique lowest score
-                  if (isUnique) {
-                    if (hole.homeNet === lowestNetScore) {
-                      potentialSkinsMap[`home-${hole.number}`] = true;
-                      
-                      // Check if we already have a recorded skin for this hole
-                      const existingSkin = skinsResults.find(skin => skin.holeNumber === hole.number);
-                      if (existingSkin) {
-                        console.log(`Confirmed skin on hole ${hole.number}`);
-                      } else {
-                        console.log(`Potential skin on hole ${hole.number} for home team`);
-                      }
-                    }
-                    if (hole.awayNet === lowestNetScore) {
-                      potentialSkinsMap[`away-${hole.number}`] = true;
-                      
-                      // Check if we already have a recorded skin for this hole
-                      const existingSkin = skinsResults.find(skin => skin.holeNumber === hole.number);
-                      if (existingSkin) {
-                        console.log(`Confirmed skin on hole ${hole.number}`);
-                      } else {
-                        console.log(`Potential skin on hole ${hole.number} for away team`);
-                      }
-                    }
-                  }
-                }
-              });
-              
-              setPotentialSkins(potentialSkinsMap);
             }
+            
+            console.log('[Skins Calculation] Lowest scores by hole (eligible players, GROSS used as proxy):', lowestScoresByHole);
+
+            // Now determine potential skins by finding unique lowest scores among eligible players
+            const potentialSkinsMap: Record<string, boolean> = {}; // key: `${playerId}-${holeNumber}`
+            data.match.holes.forEach((hole: Hole) => {
+              const holeScores = lowestScoresByHole[hole.number] || [];
+              if (holeScores.length === 0) return; // Skip hole if no eligible scores
+
+              // Sort scores (using gross for now)
+              holeScores.sort((a, b) => (a.gross ?? Infinity) - (b.gross ?? Infinity));
+              
+              const lowestScore = holeScores[0].gross;
+              if (lowestScore === null) return; // Skip if lowest score is null
+
+              // Check if this is a unique lowest score
+              const countLowest = holeScores.filter(score => score.gross === lowestScore).length;
+              const isUnique = countLowest === 1;
+              
+              if (isUnique) {
+                const winningPlayerId = holeScores[0].playerId;
+                // Mark potential skin for this player on this hole
+                potentialSkinsMap[`${winningPlayerId}-${hole.number}`] = true;
+                console.log(`[Skins Calculation] Potential skin on hole ${hole.number} for player ${winningPlayerId} with gross score ${lowestScore}`);
+              }
+            });
+              
+            setPotentialSkins(potentialSkinsMap);
           } catch (error) {
             console.error('Error calculating skins across all matches:', error);
           }
         };
         
-        fetchAllMatchScores();
+        fetchAllMatchScoresForSkins();
       }
     }
-  }, [data?.match, tournamentData]);
+  }, [data?.match, tournamentData, financialData, skinsEligiblePlayers]);
 
   // Handle score input change
   const handleScoreChange = (key: string, value: string) => {
@@ -424,7 +444,7 @@ export function useScorecardState(matchId: string | undefined) {
     try {
       // Get format type to determine scoring method
       const isSinglesOrBestBall = data?.match?.format?.toLowerCase().includes('singles') || 
-                                  data?.match?.format?.toLowerCase().includes('best ball');
+                                  data?.match?.format?.includes('best ball');
       
       // For regular team matches, save as usual
       const holeUpdates: HoleScoreUpdate[] = data.match.holes.map((hole) => {
@@ -681,80 +701,47 @@ export function useScorecardState(matchId: string | undefined) {
   const openSkinsModal = (hole: Hole) => {
     if (!data?.match) return;
     
-    // Check if scores are entered
+    // Check if scores are entered for relevant players
+    // (This might need refinement based on eligible players)
     if (hole.homeGross === null || hole.awayGross === null) {
       alert('Both teams must have scores entered before recording a skin');
       return;
     }
-    
-    // Determine potential skin
-    const homePotentialSkin = potentialSkins[`home-${hole.number}`];
-    const awayPotentialSkin = potentialSkins[`away-${hole.number}`];
-    
+
+    // Get eligible players for THIS match
+    const eligiblePlayersForModal = skinsEligiblePlayers();
+    if (eligiblePlayersForModal.length === 0) {
+      alert('No players in this match are eligible for Skins.');
+      return;
+    }
+
+    // Determine potential skin based on the calculation results
+    // The potentialSkinsMap key is `${playerId}-${hole.number}`
+    let potentialWinnerPlayerId: string | null = null;
+    let bestScore: number | null = null;
+    eligiblePlayersForModal.forEach(player => {
+        if (potentialSkins[`${player.id}-${hole.number}`]) {
+            potentialWinnerPlayerId = player.id;
+            // Find the score for this player on this hole
+            const homeScore = hole.homePlayerScores?.[player.id];
+            const awayScore = hole.awayPlayerScores?.[player.id];
+            bestScore = homeScore ?? awayScore ?? null; // Assuming player is only on one team
+        }
+    });
+
     // Get current skin winner if it exists
     const currentWinnerId = skinsWinners[`${hole.number}`] || null;
-    
-    // Get score for the hole (use the lower of the two scores)
-    const homeScore = hole.homeGross || Infinity;
-    const awayScore = hole.awayGross || Infinity;
-    
-    // Determine the best score and which player achieved it
-    const bestScore = Math.min(homeScore, awayScore);
-    
-    // Add potential winner indicator to players
-    let potentialWinnerPlayerId = null;
-    
-    // For singles/best ball, we want to select the specific player with the best score
-    if (data.match.format?.toLowerCase().includes('singles') || 
-        data.match.format?.toLowerCase().includes('best ball')) {
-      
-      // Determine which team had the better score
-      const bestScoreTeam = homeScore < awayScore ? 'home' : 
-                         awayScore < homeScore ? 'away' : null;
-      
-      // If scores are tied, we won't have a skin
-      if (bestScoreTeam) {
-        const players = bestScoreTeam === 'home' ? 
-          data.match.homePlayers.map((p: any) => ({...p, potentialSkinWinner: hole.number})) : 
-          data.match.awayPlayers.map((p: any) => ({...p, potentialSkinWinner: hole.number}));
-        
-        // For singles, select the specific player
-        if (data.match.format?.toLowerCase().includes('singles') && players.length === 1) {
-          potentialWinnerPlayerId = players[0].id;
-        }
-      }
-    }
     
     setSkinsModalData({
       holeNumber: hole.number,
       holeName: `Hole ${hole.number}`,
       currentWinnerId: currentWinnerId || potentialWinnerPlayerId,
-      currentScore: bestScore === Infinity ? null : bestScore
+      currentScore: bestScore
     });
     
-    // Create enhanced players array with potential winner flag for the modal
-    const allPlayers = [
-      ...data.match.homePlayers.map((p: any) => ({
-        ...p, 
-        potentialSkinWinner: homePotentialSkin && hole.homeGross === bestScore ? hole.number : null,
-        isHomeTeam: true
-      })),
-      ...data.match.awayPlayers.map((p: any) => ({
-        ...p,
-        potentialSkinWinner: awayPotentialSkin && hole.awayGross === bestScore ? hole.number : null,
-        isHomeTeam: false
-      }))
-    ];
-    
-    // Log the potential skin winner for debugging
-    const potentialWinner = allPlayers.find(p => p.potentialSkinWinner === hole.number);
-    if (potentialWinner) {
-      console.log(`Potential skin winner on hole ${hole.number}: ${potentialWinner.name} with score ${bestScore}`);
-    }
-    
-    // Pass enhanced player data to the modal
-    data.match.enhancedPlayers = allPlayers;
-    
+    // Pass ONLY eligible players to the modal
+    data.match.enhancedPlayers = eligiblePlayersForModal; 
+
     setShowSkinsModal(true);
   };
   
@@ -802,6 +789,7 @@ export function useScorecardState(matchId: string | undefined) {
     skinsWinners,
     skinsResults,
     tournamentData,
+    financialData,
     // CTP Modal
     showCtpModal,
     setShowCtpModal,
@@ -823,5 +811,7 @@ export function useScorecardState(matchId: string | undefined) {
     setPasswordInput,
     verifyPasswordAndLock,
     refreshMatch,
+    ctpEligiblePlayers,
+    skinsEligiblePlayers,
   };
 }

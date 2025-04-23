@@ -156,9 +156,111 @@ export class MatchService {
 
     // Handle foursome matches
     let foursomeMatches = null;
+    let aggregatedPoints = match.points; // Default to individual match points
     
-    if (match.playerToPlayerMatch && match.foursomeGroupId) {
-      foursomeMatches = await this.getRelatedFoursomeMatches(match.id, match.foursomeGroupId);
+    // Check if this is a Singles match that might be part of a paired foursome
+    const isSinglesFormat = match.format.formatName === 'Singles' || match.formatId === 'SINGLES';
+
+    if (isSinglesFormat) {
+      console.log(`[getMatchWithScores] Match ${match.id} is Singles. Checking for paired match using player logic...`);
+      
+      // 1. Get players in the current match
+      const currentPlayerHome = homePlayers.length > 0 ? homePlayers[0] : null;
+      const currentPlayerAway = awayPlayers.length > 0 ? awayPlayers[0] : null;
+      
+      let siblingMatchId: string | null = null;
+
+      if (currentPlayerHome && currentPlayerAway) {
+        console.log(`[getMatchWithScores] Current match players: ${currentPlayerHome.name} vs ${currentPlayerAway.name}`);
+        
+        // 2. Find potential sibling matches (same tournament, tee time, teams) - RELAXED
+        const potentialSiblingMatches = await prisma.match.findMany({
+          where: {
+            id: { not: matchId }, // Exclude self
+            tournamentId: match.tournamentId,
+            teeTime: match.teeTime,
+            homeTeamId: match.homeTeamId,
+            awayTeamId: match.awayTeamId,
+            // REMOVED startingHole check for quickest fix
+          },
+          include: {
+            playerPairings: { include: { player: true } } 
+          }
+        });
+        
+        console.log(`[getMatchWithScores] Found ${potentialSiblingMatches.length} potential sibling matches at the same time/teams.`);
+
+        // 3. Find the specific sibling match involving the *other* players
+        if (potentialSiblingMatches.length > 0) {
+          // Get all players for the home and away teams in this tournament
+          const allTeamPlayers = await prisma.player.findMany({
+             where: {
+               teamId: { in: [match.homeTeamId, match.awayTeamId] }
+             }
+          });
+          const allHomeTeamPlayers = allTeamPlayers.filter(p => p.teamId === match.homeTeamId);
+          const allAwayTeamPlayers = allTeamPlayers.filter(p => p.teamId === match.awayTeamId);
+
+          // Find the players NOT in the current match
+          const otherHomePlayer = allHomeTeamPlayers.find(p => p.id !== currentPlayerHome.id);
+          const otherAwayPlayer = allAwayTeamPlayers.find(p => p.id !== currentPlayerAway.id);
+
+          if (otherHomePlayer && otherAwayPlayer) {
+             console.log(`[getMatchWithScores] Other potential players in foursome: ${otherHomePlayer.name} vs ${otherAwayPlayer.name}`);
+             
+             // Check potential siblings for the correct pairing
+             const actualSiblings = potentialSiblingMatches.filter(potentialMatch => {
+               const siblingHome = potentialMatch.playerPairings.find(p => p.isHomeTeam)?.player;
+               const siblingAway = potentialMatch.playerPairings.find(p => !p.isHomeTeam)?.player;
+               return siblingHome?.id === otherHomePlayer.id && siblingAway?.id === otherAwayPlayer.id;
+             });
+
+             if (actualSiblings.length === 1) {
+               siblingMatchId = actualSiblings[0].id;
+               console.log(`[getMatchWithScores] Found unique sibling match by player pairing: ${siblingMatchId}. Aggregating points.`);
+             } else {
+               console.log(`[getMatchWithScores] Did not find a unique sibling match with the correct player pairing (found ${actualSiblings.length}).`);
+             }
+          } else {
+            console.log(`[getMatchWithScores] Could not find the other home/away players for this foursome.`);
+          }
+        }
+      }
+      
+      // 4. Aggregate points if a unique sibling was identified
+      if (siblingMatchId) {
+         // Fetch points for both matches
+          const allGroupPoints = await prisma.matchPoints.findMany({
+            where: {
+              matchId: { in: [matchId, siblingMatchId] }
+            }
+          });
+
+          console.log(`[getMatchWithScores] Found points records for paired matches:`, JSON.stringify(allGroupPoints));
+
+          let totalHomePoints = 0;
+          let totalAwayPoints = 0;
+          allGroupPoints.forEach(p => {
+            totalHomePoints += p.homeTeamPoints;
+            totalAwayPoints += p.awayTeamPoints;
+          });
+
+          aggregatedPoints = {
+            matchId: match.id, // Keep association
+            homeTeamPoints: totalHomePoints,
+            awayTeamPoints: totalAwayPoints
+          };
+          console.log(`Aggregated points for paired matches ${matchId} & ${siblingMatchId}: Home=${totalHomePoints}, Away=${totalAwayPoints}`);
+          
+          // Fetch the full sibling match data for the foursomeMatches display
+          foursomeMatches = await this.getRelatedFoursomeMatchesByIds([siblingMatchId]);
+      } else {
+        console.log(`[getMatchWithScores] Proceeding with individual points for match ${matchId}.`);
+        foursomeMatches = null;
+      }
+    } else {
+      console.log(`[getMatchWithScores] Match ${match.id} is not Singles format. Using individual points.`);
+      foursomeMatches = null; // Not part of a relevant foursome display
     }
     
     // Consistently determine real team status using our utility function
@@ -194,7 +296,7 @@ export class MatchService {
       holes,
       homeTeamHandicap,
       awayTeamHandicap,
-      points: match.points,
+      points: aggregatedPoints,
       foursomeMatches
     };
     
@@ -750,16 +852,6 @@ export class MatchService {
       // Check if this is part of a foursome group (multiple singles matches)
       const isFoursomeGroup = !!match.foursomeGroupId;
       
-      // Singles format in a foursome group has 2 points available in total (1 point per player-to-player match)
-      // Each individual match has 1 point available (9 holes = 9 individual points available)
-      // Other formats have 1 point available for the entire match
-      
-      // For singles player-to-player matches:
-      // - Each hole is worth 1/9 of a point (for 9 hole matches)
-      // - Each player can earn up to 1 point per match
-      // - This gives 2 total points available per foursome (with 2 singles matches)
-      const totalAvailablePoints = 1.0; // Each individual match worth 1 point
-      
       // Log the match details for debugging
       console.log(`Match details: 
         Format: ${match.format.formatName}
@@ -767,29 +859,6 @@ export class MatchService {
         PlayerToPlayer: ${isPlayerToPlayerMatch}
         FoursomeGroup: ${isFoursomeGroup}
         FoursomeID: ${match.foursomeGroupId || 'none'}`);
-      
-      
-      // Determine hole count - for 9-hole matches, each hole is worth 1/9 of the total available points
-      const holeCount = holeResults.length > 0 ? 
-        (holeResults.length <= 9 ? 9 : 18) : 9;
-      
-      // For Singles format with player-to-player matches:
-      // - Each player can earn 1 point per match (9 holes)
-      // - Each hole is worth 1/9 point for a win, 1/18 point for a tie
-      // - Total available points per foursome = 2 points (1 point per 1v1 matchup)
-      const pointsPerWin = (totalAvailablePoints / holeCount);
-      const pointsPerTie = pointsPerWin / 2.0;
-      
-      console.log(`Points per hole: Win=${pointsPerWin.toFixed(4)}, Tie=${pointsPerTie.toFixed(4)}`);
-      
-      console.log(`Match format: ${match.format.formatName}, Singles: ${isSinglesMatch}, PlayerToPlayer: ${isPlayerToPlayerMatch}`);
-      console.log(`Total available points: ${totalAvailablePoints}, Hole count: ${holeCount}`);
-      console.log(`Points per hole: Win=${pointsPerWin}, Tie=${pointsPerTie}`);
-      
-      // Count points for each team
-      let homePoints = 0;
-      let awayPoints = 0;
-      
       
       // Count how many holes have been played
       const completedHoles = holeResults.filter(result => 
@@ -804,165 +873,204 @@ export class MatchService {
         return;
       }
       
-      // Process each hole result to calculate points
+      // ==== New Match Play Scoring Logic ====
+      // 1. Count total holes won by each team
+      // 2. Team with more holes wins gets 1 point
+      // 3. If tied, each team gets 0.5 points
+      
+      // Count holes won by each team
+      let homeHolesWon = 0;
+      let awayHolesWon = 0;
+      let holesTied = 0;
+      
+      // Process each hole result to track holes won/tied
       for (const result of holeResults) {
         if (result.homeTeamNetScore !== null && result.awayTeamNetScore !== null) {
-          // Singles matches are scored just like other match play formats
-          // But we'll add extra logging for clarity
-          if (isSinglesMatch && isPlayerToPlayerMatch) {
-            console.log(`Processing singles player-to-player match: ${match.id}`);
+          // Determine who won this hole
+          if (result.homeTeamNetScore < result.awayTeamNetScore) {
+            // Home team/player won this hole (lower score wins in golf)
+            homeHolesWon++;
             
-            // For singles matches, use the standard match play scoring
-            // with points determined by the format (same as other formats)
-            if (result.homeTeamNetScore < result.awayTeamNetScore) {
-              // Home player won this hole (lower score wins in golf)
-              homePoints += pointsPerWin;
-              console.log(`Singles match - Hole win for Home (${result.homeTeamNetScore} vs ${result.awayTeamNetScore}) - ${pointsPerWin} points`);
-              console.log(`Setting winnerTeamId to ${match.homeTeamId} (home team) for hole ${result.id}`);
-              
-              // Set winner in hole result and ensure scores are saved correctly
-              try {
-                await prisma.holeResult.update({
-                  where: { id: result.id },
-                  data: { 
-                    winnerTeamId: match.homeTeamId,
-                    // Force a refresh of net scores to make sure they're correctly stored
-                    homeTeamNetScore: result.homeTeamNetScore,
-                    awayTeamNetScore: result.awayTeamNetScore 
-                  }
-                });
-                console.log(`Updated winner team for hole ${result.id} to ${match.homeTeamId} (home team)`);
-              } catch (e) {
-                console.error(`Failed to update winner team ID: ${e}`);
-              }
-            } else if (result.homeTeamNetScore > result.awayTeamNetScore) {
-              // Away player won this hole (lower score wins)
-              awayPoints += pointsPerWin;
-              console.log(`Singles match - Hole win for Away (${result.awayTeamNetScore} vs ${result.homeTeamNetScore}) - ${pointsPerWin} points`);
-              console.log(`Setting winnerTeamId to ${match.awayTeamId} (away team) for hole ${result.id}`);
-              
-              // Set winner in hole result and make sure scores are correct
-              try {
-                await prisma.holeResult.update({
-                  where: { id: result.id },
-                  data: { 
-                    winnerTeamId: match.awayTeamId,
-                    // Force a refresh of net scores to make sure they're correctly stored
-                    homeTeamNetScore: result.homeTeamNetScore,
-                    awayTeamNetScore: result.awayTeamNetScore
-                  }
-                });
-                console.log(`Updated winner team for hole ${result.id} to ${match.awayTeamId} (away team)`);
-              } catch (e) {
-                console.error(`Failed to update winner team ID: ${e}`);
-              }
-            } else {
-              // Tied hole (halved) - each gets half points
-              homePoints += pointsPerTie;
-              awayPoints += pointsPerTie;
-              console.log(`Singles match - Hole tied (${result.homeTeamNetScore} vs ${result.awayTeamNetScore}) - ${pointsPerTie} points each`);
-              
-              // Clear winner for tied holes and ensure scores are saved
-              try {
-                await prisma.holeResult.update({
-                  where: { id: result.id },
-                  data: { 
-                    winnerTeamId: null,
-                    // Force a refresh of net scores to make sure they're correctly stored
-                    homeTeamNetScore: result.homeTeamNetScore,
-                    awayTeamNetScore: result.awayTeamNetScore 
-                  }
-                });
-                console.log(`Updated hole ${result.id} as tied`);
-              } catch (e) {
-                console.error(`Failed to update winner team ID: ${e}`);
-              }
+            // Set winner in hole result for statistics tracking
+            try {
+              await prisma.holeResult.update({
+                where: { id: result.id },
+                data: { 
+                  winnerTeamId: match.homeTeamId,
+                  homeTeamNetScore: result.homeTeamNetScore,
+                  awayTeamNetScore: result.awayTeamNetScore 
+                }
+              });
+            } catch (e) {
+              console.error(`Failed to update winner team ID: ${e}`);
+            }
+          } else if (result.homeTeamNetScore > result.awayTeamNetScore) {
+            // Away team/player won this hole
+            awayHolesWon++;
+            
+            // Set winner in hole result for statistics tracking
+            try {
+              await prisma.holeResult.update({
+                where: { id: result.id },
+                data: { 
+                  winnerTeamId: match.awayTeamId,
+                  homeTeamNetScore: result.homeTeamNetScore,
+                  awayTeamNetScore: result.awayTeamNetScore 
+                }
+              });
+            } catch (e) {
+              console.error(`Failed to update winner team ID: ${e}`);
             }
           } else {
-            // Standard scoring for non-singles matches
-            if (result.homeTeamNetScore < result.awayTeamNetScore) {
-              homePoints += pointsPerWin;
-              console.log(`Hole ${result.holeId}: Home wins (${result.homeTeamNetScore} vs ${result.awayTeamNetScore})`);
-              
-              // Set winner in hole result to ensure it's captured for leaderboard
-              try {
-                await prisma.holeResult.update({
-                  where: { id: result.id },
-                  data: { 
-                    winnerTeamId: match.homeTeamId,
-                    // Ensure net scores are correctly stored
-                    homeTeamNetScore: result.homeTeamNetScore,
-                    awayTeamNetScore: result.awayTeamNetScore
-                  }
-                });
-                console.log(`Updated hole ${result.holeId} with home team win`);
-              } catch (e) {
-                console.error(`Failed to update winner team ID: ${e}`);
-              }
-              
-            } else if (result.homeTeamNetScore > result.awayTeamNetScore) {
-              awayPoints += pointsPerWin;
-              console.log(`Hole ${result.holeId}: Away wins (${result.awayTeamNetScore} vs ${result.homeTeamNetScore})`);
-              
-              // Set winner in hole result to ensure it's captured for leaderboard
-              try {
-                await prisma.holeResult.update({
-                  where: { id: result.id },
-                  data: { 
-                    winnerTeamId: match.awayTeamId,
-                    // Ensure net scores are correctly stored
-                    homeTeamNetScore: result.homeTeamNetScore,
-                    awayTeamNetScore: result.awayTeamNetScore
-                  }
-                });
-                console.log(`Updated hole ${result.holeId} with away team win`);
-              } catch (e) {
-                console.error(`Failed to update winner team ID: ${e}`);
-              }
-              
-            } else {
-              // Scores are tied
-              homePoints += pointsPerTie;
-              awayPoints += pointsPerTie;
-              console.log(`Hole ${result.holeId}: Tied (${result.homeTeamNetScore} vs ${result.awayTeamNetScore})`);
-              
-              // Clear winner in hole result for ties
-              try {
-                await prisma.holeResult.update({
-                  where: { id: result.id },
-                  data: { 
-                    winnerTeamId: null,
-                    // Ensure net scores are correctly stored
-                    homeTeamNetScore: result.homeTeamNetScore,
-                    awayTeamNetScore: result.awayTeamNetScore
-                  }
-                });
-                console.log(`Updated hole ${result.holeId} as tied`);
-              } catch (e) {
-                console.error(`Failed to update winner team ID: ${e}`);
-              }
+            // Tied hole
+            holesTied++;
+            
+            // Set tie in hole result
+            try {
+              await prisma.holeResult.update({
+                where: { id: result.id },
+                data: { 
+                  winnerTeamId: null,
+                  homeTeamNetScore: result.homeTeamNetScore,
+                  awayTeamNetScore: result.awayTeamNetScore 
+                }
+              });
+            } catch (e) {
+              console.error(`Failed to update winner team ID: ${e}`);
             }
           }
         }
       }
       
-      console.log(`Final points: Home=${homePoints}, Away=${awayPoints}`);
+      console.log(`Hole results: Home won ${homeHolesWon}, Away won ${awayHolesWon}, Tied ${holesTied}`);
       
-      // Update match points
-      await prisma.matchPoints.upsert({
-        where: { matchId },
-        update: {
-          homeTeamPoints: homePoints,
-          awayTeamPoints: awayPoints,
-        },
-        create: {
-          matchId,
-          homeTeamPoints: homePoints,
-          awayTeamPoints: awayPoints,
+      // Calculate match points based on holes won for the CURRENT match
+      let currentMatchHomePoints = 0;
+      let currentMatchAwayPoints = 0;
+      
+      // For completed matches - determine winner based on hole wins
+      if (completedHoles > 0) {
+        // Standard scoring for non-singles-foursome formats
+        // OR initial calculation for a singles match (will be handled further below)
+        if (homeHolesWon > awayHolesWon) {
+          currentMatchHomePoints = 1.0;
+        } else if (awayHolesWon > homeHolesWon) {
+          currentMatchAwayPoints = 1.0;
+        } else { // Tie
+          currentMatchHomePoints = 0.5;
+          currentMatchAwayPoints = 0.5;
         }
-      });
-      
-      console.log(`Match points updated successfully for match ${matchId}`);
+      }
+
+      // If it's a Singles match, try to find its pair using player logic and update points for both
+      let siblingMatchId: string | null = null;
+      if (isSinglesMatch) {
+        console.log(`[updateMatchPoints] Match ${matchId} is Singles. Checking for paired match using player logic...`);
+        
+        // 1. Get players IN THIS MATCH from the fetched data
+        const currentPairings = match.playerPairings || [];
+        const currentPlayerHome = currentPairings.find(p => p.isHomeTeam)?.player || null;
+        const currentPlayerAway = currentPairings.find(p => !p.isHomeTeam)?.player || null;
+
+        if (currentPlayerHome && currentPlayerAway) {
+          console.log(`[updateMatchPoints] Current match players: ${currentPlayerHome.name} vs ${currentPlayerAway.name}`);
+          
+          // 2. Find potential sibling matches (same tournament, tee time, teams) - RELAXED
+          const potentialSiblingMatches = await prisma.match.findMany({
+            where: {
+              id: { not: matchId }, // Exclude self
+              tournamentId: match.tournamentId,
+              teeTime: match.teeTime,
+              homeTeamId: match.homeTeamId,
+              awayTeamId: match.awayTeamId,
+              // REMOVED startingHole check for quickest fix
+            },
+            include: {
+              playerPairings: { include: { player: true } } 
+            }
+          });
+          
+          console.log(`[updateMatchPoints] Found ${potentialSiblingMatches.length} potential sibling matches.`);
+
+          // 3. Find the specific sibling match involving the *other* players
+          if (potentialSiblingMatches.length > 0) {
+            const allTeamPlayers = await prisma.player.findMany({
+               where: { teamId: { in: [match.homeTeamId, match.awayTeamId] } }
+            });
+            const allHomeTeamPlayers = allTeamPlayers.filter(p => p.teamId === match.homeTeamId);
+            const allAwayTeamPlayers = allTeamPlayers.filter(p => p.teamId === match.awayTeamId);
+            const otherHomePlayer = allHomeTeamPlayers.find(p => p.id !== currentPlayerHome.id);
+            const otherAwayPlayer = allAwayTeamPlayers.find(p => p.id !== currentPlayerAway.id);
+
+            if (otherHomePlayer && otherAwayPlayer) {
+               console.log(`[updateMatchPoints] Other potential players: ${otherHomePlayer.name} vs ${otherAwayPlayer.name}`);
+               const actualSiblings = potentialSiblingMatches.filter(potentialMatch => {
+                 const siblingHome = potentialMatch.playerPairings.find(p => p.isHomeTeam)?.player;
+                 const siblingAway = potentialMatch.playerPairings.find(p => !p.isHomeTeam)?.player;
+                 return siblingHome?.id === otherHomePlayer.id && siblingAway?.id === otherAwayPlayer.id;
+               });
+
+               if (actualSiblings.length === 1) {
+                 siblingMatchId = actualSiblings[0].id;
+                 console.log(`[updateMatchPoints] Found unique sibling match by player pairing: ${siblingMatchId}.`);
+               } else {
+                 console.log(`[updateMatchPoints] Did not find a unique sibling match with the correct player pairing (found ${actualSiblings.length}).`);
+               }
+            } else {
+              console.log(`[updateMatchPoints] Could not find the other home/away players.`);
+            }
+          }
+        } else {
+          console.log(`[updateMatchPoints] Could not get current players for match ${matchId}.`);
+        }
+      }
+
+      // Update points based on whether a sibling was found
+      if (siblingMatchId) {
+        // Fetch points for both matches
+        const allGroupPoints = await prisma.matchPoints.findMany({
+          where: {
+            matchId: { in: [matchId, siblingMatchId] }
+          }
+        });
+
+        console.log(`[updateMatchPoints] Found points records for paired matches:`, JSON.stringify(allGroupPoints));
+
+        let totalHomePoints = 0;
+        let totalAwayPoints = 0;
+        allGroupPoints.forEach(p => {
+          totalHomePoints += p.homeTeamPoints;
+          totalAwayPoints += p.awayTeamPoints;
+        });
+
+        aggregatedPoints = {
+          matchId: match.id, // Keep association
+          homeTeamPoints: totalHomePoints,
+          awayTeamPoints: totalAwayPoints
+        };
+        console.log(`[updateMatchPoints] Aggregated points for paired matches ${matchId} & ${siblingMatchId}: Home=${totalHomePoints}, Away=${totalAwayPoints}`);
+        
+        // Execute updates in a transaction
+        await prisma.$transaction(updates);
+        console.log(`Match points updated successfully for paired matches ${matchId} & ${siblingMatchId}`);
+
+      } else {
+        // For non-paired matches or non-singles, just update the current match
+        console.log(`Standard match points update for ${matchId}: Home=${currentMatchHomePoints}, Away=${currentMatchAwayPoints}`);
+        await prisma.matchPoints.upsert({
+          where: { matchId },
+          update: {
+            homeTeamPoints: currentMatchHomePoints,
+            awayTeamPoints: currentMatchAwayPoints,
+          },
+          create: {
+            matchId,
+            homeTeamPoints: currentMatchHomePoints,
+            awayTeamPoints: currentMatchAwayPoints,
+          }
+        });
+        console.log(`Match points updated successfully for match ${matchId}`);
+      }
     } catch (error) {
       console.error(`Error updating match points for match ${matchId}:`, error);
       throw error;
@@ -970,13 +1078,16 @@ export class MatchService {
   }
 
   /**
-   * Get related matches in the same foursome group
+   * Get related matches by specific IDs (Helper for the new getMatchWithScores logic)
    */
-  private async getRelatedFoursomeMatches(currentMatchId: string, foursomeGroupId: string) {
+  private async getRelatedFoursomeMatchesByIds(matchIds: string[]) {
+    if (!matchIds || matchIds.length === 0) {
+      return [];
+    }
+    
     const otherMatches = await prisma.match.findMany({
       where: {
-        foursomeGroupId: foursomeGroupId,
-        id: { not: currentMatchId }
+        id: { in: matchIds }
       },
       include: {
         playerPairings: {
@@ -984,24 +1095,47 @@ export class MatchService {
             player: true
           }
         },
-        points: true
+        points: true,
+        holeResults: true,
+        format: true
       }
     });
     
-    // Format the other matches for display
+    // Format the other matches for display (copied & adapted from original getRelatedFoursomeMatches)
     return otherMatches.map(m => {
       const homePlayers = m.playerPairings.filter(p => p.isHomeTeam).map(p => p.player);
       const awayPlayers = m.playerPairings.filter(p => !p.isHomeTeam).map(p => p.player);
       
-      // Determine match result
+      const homeHolesWon = m.holeResults.filter(r => 
+        r.winnerTeamId === m.homeTeamId && 
+        r.homeTeamNetScore !== null && 
+        r.awayTeamNetScore !== null
+      ).length;
+      
+      const awayHolesWon = m.holeResults.filter(r => 
+        r.winnerTeamId === m.awayTeamId && 
+        r.homeTeamNetScore !== null && 
+        r.awayTeamNetScore !== null
+      ).length;
+      
+      const holesTied = m.holeResults.filter(r => 
+        r.winnerTeamId === null && 
+        r.homeTeamNetScore !== null && 
+        r.awayTeamNetScore !== null
+      ).length;
+      
       let result = null;
       if (m.points) {
+        const homePlayerName = homePlayers[0]?.name || 'Home';
+        const awayPlayerName = awayPlayers[0]?.name || 'Away';
+        const isSinglesMatch = m.format?.formatName === 'Singles' || m.formatId === 'SINGLES';
+        
         if (m.points.homeTeamPoints > m.points.awayTeamPoints) {
-          result = `${homePlayers[0]?.name || 'Home'} wins ${m.points.homeTeamPoints}-${m.points.awayTeamPoints}`;
+          result = isSinglesMatch ? `${homePlayerName} wins (${homeHolesWon}-${awayHolesWon}-${holesTied}) - 1 point` : `${homePlayerName} wins ${m.points.homeTeamPoints}-${m.points.awayTeamPoints}`;
         } else if (m.points.awayTeamPoints > m.points.homeTeamPoints) {
-          result = `${awayPlayers[0]?.name || 'Away'} wins ${m.points.awayTeamPoints}-${m.points.homeTeamPoints}`;
+          result = isSinglesMatch ? `${awayPlayerName} wins (${awayHolesWon}-${homeHolesWon}-${holesTied}) - 1 point` : `${awayPlayerName} wins ${m.points.awayTeamPoints}-${m.points.homeTeamPoints}`;
         } else if (m.points.homeTeamPoints === m.points.awayTeamPoints) {
-          result = 'Match tied';
+          result = isSinglesMatch ? `Match tied (${homeHolesWon}-${awayHolesWon}-${holesTied}) - 0.5 points each` : `Match tied ${m.points.homeTeamPoints}-${m.points.awayTeamPoints}`;
         }
       }
       
@@ -1009,7 +1143,11 @@ export class MatchService {
         id: m.id,
         homePlayers,
         awayPlayers,
-        result
+        result,
+        homeHolesWon,
+        awayHolesWon,
+        holesTied,
+        points: m.points
       };
     });
   }

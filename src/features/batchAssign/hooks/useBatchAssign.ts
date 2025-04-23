@@ -411,65 +411,118 @@ export function useBatchAssign(tournamentId: string | undefined) {
       setSaving(true);
       setError(null);
       
-      const assignmentPayloads = [];
+      const standardAssignmentsPayloads = [];
+      const foursomeCreationPayloads = []; // Separate payload for singles/foursomes
       
       for (const match of assignments) {
-        if (match.homePlayers.length > 0 || match.awayPlayers.length > 0) {
-          let payload: any = {
+        // Check if players have actually been assigned to avoid empty saves
+        const hasHomeAssignment = match.homePlayers.length > 0;
+        const hasAwayAssignment = match.awayPlayers.length > 0;
+        const hasMatchups = match.isSingles && match.playerMatchups && match.playerMatchups.length === 2;
+        
+        if (match.isSingles && hasMatchups) {
+          // Prepare payload for createFoursome API endpoint
+          console.log(`Preparing payload for createFoursome for placeholder match: ${match.matchId}`);
+          foursomeCreationPayloads.push({
+            tournamentId: tournamentId, // Use tournamentId from hook props
+            scheduleId: match.scheduleId,
+            formatId: match.formatId,
+            homeTeamId: match.homeTeamId,
+            awayTeamId: match.awayTeamId,
+            courseId: match.courseId,
+            startingHole: match.startingHole,
+            teeTime: match.teeTime, // Pass the original teeTime string/date
+            matchups: match.playerMatchups.map(m => ({ 
+              homePlayerId: m.homeId, 
+              awayPlayerId: m.awayId 
+            })),
+            placeholderMatchId: match.matchId // Include placeholder ID for potential deletion
+          });
+        } else if (!match.isSingles && (hasHomeAssignment || hasAwayAssignment)) {
+          // Prepare payload for standard batch-assign endpoint
+          standardAssignmentsPayloads.push({
             matchId: match.matchId,
             homePlayers: match.homePlayers,
             awayPlayers: match.awayPlayers
-          };
-          
-          // For singles format, include pairings
-          if (match.isSingles && match.playerMatchups?.length) {
-            payload.pairings = match.playerMatchups.map(matchup => ({
-              homePlayerId: matchup.homeId,
-              awayPlayerId: matchup.awayId
-            }));
+          });
+        }
+      }
+      
+      let allSuccessful = true;
+      let errorMessages: string[] = [];
+
+      // 1. Process Foursome Creations
+      if (foursomeCreationPayloads.length > 0) {
+        console.log('Calling API to create foursomes...', foursomeCreationPayloads);
+        try {
+          const token = localStorage.getItem('token');
+          if (!token) {
+            throw new Error('Authentication token not found. Please log in again.');
           }
-          
-          assignmentPayloads.push(payload);
+          const response = await fetch('/api/matches/create-foursome', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(token && { 'Authorization': `Bearer ${token}` })
+            },
+            body: JSON.stringify({ foursomes: foursomeCreationPayloads }), // Send as 'foursomes' array
+          });
+          if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || `Failed to create foursomes: ${response.statusText}`);
+          }
+          console.log('Foursome creation successful.');
+          // Consider deleting placeholder matches here or in the API response
+        } catch (err: any) {
+          allSuccessful = false;
+          errorMessages.push(err.message || 'Failed during foursome creation.');
+          console.error('Error creating foursomes:', err);
+        }
+      }
+
+      // 2. Process Standard Assignments (if any and no foursome errors)
+      if (standardAssignmentsPayloads.length > 0 && allSuccessful) {
+        console.log('Calling API for standard batch assignments...');
+        try {
+          const token = localStorage.getItem('token');
+          if (!token) {
+            throw new Error('Authentication token not found. Please log in again.');
+          }
+          const response = await fetch('/api/matches/batch-assign', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(token && { 'Authorization': `Bearer ${token}` })
+            },
+            body: JSON.stringify({ assignments: standardAssignmentsPayloads }),
+          });
+          if (!response.ok) {
+             const errorData = await response.json();
+             throw new Error(errorData.error || `Failed to save standard assignments: ${response.statusText}`);
+          }
+          console.log('Standard assignments successful.');
+        } catch (err: any) {
+           allSuccessful = false;
+           errorMessages.push(err.message || 'Failed during standard assignments.');
+           console.error('Error saving standard assignments:', err);
         }
       }
       
-      if (assignmentPayloads.length === 0) {
-        setError("No player assignments to save");
-        setSaving(false);
-        return;
+      if (foursomeCreationPayloads.length === 0 && standardAssignmentsPayloads.length === 0) {
+         setError("No player assignments or foursome matchups to save");
+         setSaving(false);
+         return;
       }
-      
-      // Get JWT token from localStorage for authentication
-      let headers = {
-        'Content-Type': 'application/json',
-      };
-      
-      // Add authorization token if available
-      if (typeof window !== 'undefined') {
-        const token = localStorage.getItem('token');
-        if (token) {
-          headers['Authorization'] = `Bearer ${token}`;
-        }
+
+      if (allSuccessful) {
+        setSaveSuccess(true);
+        // Refresh schedule data to show changes
+        refreshSchedules(); 
+        setTimeout(() => setSaveSuccess(false), 3000);
+      } else {
+        setError(errorMessages.join(' \n '));
       }
-      
-      console.log('Sending batch assignment with auth token');
-      const response = await fetch('/api/matches/batch-assign', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ assignments: assignmentPayloads }),
-      });
-      
-      if (!response.ok) {
-        throw new Error(`Failed to save assignments: ${response.statusText}`);
-      }
-      
-      // Success
-      setSaveSuccess(true);
-      
-      // Clear success message after 3 seconds
-      setTimeout(() => {
-        setSaveSuccess(false);
-      }, 3000);
+
     } catch (err: any) {
       console.error('Error saving assignments:', err);
       setError(err.message || 'Failed to save player assignments');

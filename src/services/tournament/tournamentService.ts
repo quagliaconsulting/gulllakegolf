@@ -462,10 +462,13 @@ export class TournamentService {
       teamStandings[awayTeamId].matchesPlayed++;
       
       // Update points - fixed to 1 decimal place to avoid floating point issues
+      // The loop processes each match individually. For singles foursomes,
+      // summing the points from each match (1 for win, 0.5 for tie)
+      // naturally aggregates the total points for the group.
       teamStandings[homeTeamId].totalPoints += parseFloat(match.points.homeTeamPoints.toFixed(1));
       teamStandings[awayTeamId].totalPoints += parseFloat(match.points.awayTeamPoints.toFixed(1));
       
-      // Update win/tie/loss records
+      // Update win/tie/loss records for teams
       if (match.points.homeTeamPoints > match.points.awayTeamPoints) {
         teamStandings[homeTeamId].matchesWon++;
         teamStandings[awayTeamId].matchesLost++;
@@ -511,37 +514,33 @@ export class TournamentService {
           r.awayTeamNetScore !== null
         ).length;
         
-        console.log(`Player ${player.playerName}: W-T-L Holes: ${holesWon}-${holesTied}-${holesLost} (Total: ${holesWon + holesTied + holesLost})`);
-        
-        
         // Update player hole statistics for ALL formats
         player.holesWon += holesWon;
         player.holesLost += holesLost;
         player.holesTied += holesTied;
         
-        // Handle points calculation for Singles format
+        console.log(`Player ${player.playerName}: W-T-L Holes: ${holesWon}-${holesTied}-${holesLost} (Total: ${holesWon + holesTied + holesLost})`);
+        
+        // Handle points calculation based on match format
         const isSinglesFormat = match.formatId === 'SINGLES' || 
           (match.format?.formatName?.toLowerCase()?.includes('singles'));
-              
-        // For singles format with 1v1 matchups, calculate player-specific points
+        
+        // For singles format with 1v1 matchups, player gets their own score
         if (isSinglesFormat || match.playerToPlayerMatch) {
-          // For singles matches with 1v1 matchups, each player can earn up to 1 point
-          // This gives 2 total points per foursome (2 players per team)
-          const pointsPerWinValue = 1.0 / 9; // 1 point for winning all 9 holes
-          const pointsPerTieValue = 0.5 / 9; // 0.5 points for tying all 9 holes
-          
-          // Calculate player points directly from holes won/tied
-          const playerPointsFromWins = holesWon * pointsPerWinValue;
-          const playerPointsFromTies = holesTied * pointsPerTieValue;
-          const totalPlayerPoints = playerPointsFromWins + playerPointsFromTies;
-          
-          // Update player points - fixed to 1 decimal place to avoid floating point issues
-          player.pointsEarned += parseFloat(totalPlayerPoints.toFixed(1));
+          // In singles format, each player gets points based on their individual match result
+          // (1 point for winning, 0.5 for tying, 0 for losing).
+          // The loop processes each match, so summing these individual points
+          // correctly reflects the total points earned by the player across all their matches.
+          const playerPoints = pairing.isHomeTeam ? match.points.homeTeamPoints : match.points.awayTeamPoints;
+          player.pointsEarned += parseFloat(playerPoints.toFixed(1));
+          console.log(`Singles/P2P match - Player ${player.playerName} awarded ${playerPoints} points`);
         }
-        // Add team points to player for team formats
+        // Team formats - add team match points to player
         else if (match.points) {
           const teamPoints = pairing.isHomeTeam ? match.points.homeTeamPoints : match.points.awayTeamPoints;
           player.pointsEarned += parseFloat(teamPoints.toFixed(1));
+          
+          console.log(`Team format - Player ${player.playerName} awarded ${teamPoints} points from team`);
         }
       });
     });
